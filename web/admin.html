@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Admin · BIZGENIX AI Knowledge Copilot</title>
+    <link rel="icon" href="/static/img/favicon.png" type="image/png" />
+    <script src="/static/js/theme.js"></script>
+    <link rel="stylesheet" href="/static/css/base.css" />
+    <link rel="stylesheet" href="/static/css/admin.css" />
+  </head>
+  <body>
+    <div class="admin-layout" id="layout">
+      <aside class="admin-nav" id="sidebar" aria-label="Admin navigation">
+        <a class="admin-brand" href="/admin" aria-label="BIZGENIX AI admin home">
+          <img class="logo-light" src="/static/img/bizgenix-logo.png" alt="BIZGENIX AI" width="112" height="32" /><img class="logo-dark" src="/static/img/bizgenix-logo-dark.png" alt="BIZGENIX AI" width="112" height="32" />
+          <span class="admin-brand-text">
+            <span class="admin-brand-name">Knowledge Copilot</span>
+            <span class="admin-brand-sub">Admin Panel</span>
+          </span>
+        </a>
+        <span class="access-badge">Admin access</span>
+
+        <nav class="nav-links">
+          <div class="nav-section">Management</div>
+          <a class="nav-link" href="#overview" data-view="overview">
+            <svg viewBox="0 0 24 24" class="icon"><rect x="4" y="4" width="6.5" height="6.5" rx="1" /><rect x="13.5" y="4" width="6.5" height="6.5" rx="1" /><rect x="4" y="13.5" width="6.5" height="6.5" rx="1" /><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1" /></svg>
+            Overview
+          </a>
+          <a class="nav-link" href="#upload" data-view="upload">
+            <svg viewBox="0 0 24 24" class="icon"><path d="M12 15V4M7.5 8.5 12 4l4.5 4.5M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" /></svg>
+            Upload Documents
+          </a>
+          <a class="nav-link" href="#knowledge" data-view="knowledge">
+            <svg viewBox="0 0 24 24" class="icon"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5" /></svg>
+            Knowledge Base
+          </a>
+
+          <div class="nav-section">System</div>
+          <a class="nav-link" href="#reindex" data-view="reindex">
+            <svg viewBox="0 0 24 24" class="icon"><path d="M3 12a9 9 0 1 0 2.6-6.4L3 8" /><path d="M3 3v5h5" /></svg>
+            Re-index
+          </a>
+          <a class="nav-link" href="#settings" data-view="settings">
+            <svg viewBox="0 0 24 24" class="icon"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" /></svg>
+            Settings
+          </a>
+        </nav>
+
+        <div class="admin-nav-footer">
+          <a class="nav-link" href="/">
+            <svg viewBox="0 0 24 24" class="icon"><path d="M5 6.5A2.5 2.5 0 0 1 7.5 4h9A2.5 2.5 0 0 1 19 6.5v7a2.5 2.5 0 0 1-2.5 2.5H10l-5 4z" /></svg>
+            Open Chat Interface
+          </a>
+        </div>
+      </aside>
+      <div class="scrim" id="scrim" hidden></div>
+
+      <main class="admin-main">
+        <header class="admin-topbar">
+          <button class="icon-btn menu-btn" type="button" id="open-nav" aria-label="Open navigation">
+            <svg viewBox="0 0 24 24" class="icon"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
+          </button>
+          <span class="crumb" id="crumb">Overview</span>
+          <div class="topbar-actions">
+            <span class="role-chip">Admin</span>
+            <button class="btn btn-sm topbar-btn" type="button" id="refresh">
+              <svg viewBox="0 0 24 24" class="icon"><path d="M3 12a9 9 0 1 0 2.6-6.4L3 8" /><path d="M3 3v5h5" /></svg>
+              Refresh
+            </button>
+            <button class="btn btn-sm topbar-btn square" type="button" id="theme-toggle" aria-label="Toggle dark theme" title="Toggle theme">
+              <svg viewBox="0 0 24 24" class="icon"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" /></svg>
+            </button>
+          </div>
+        </header>
+
+        <div class="admin-content">
+          <div class="banner banner-warning" id="reindex-banner" role="status" hidden>
+            <strong>Reindex required.</strong>
+            <span>The embedding configuration changed since the index was built. New uploads will fail until you reindex all documents.</span>
+            <a class="btn btn-sm" href="#reindex">Review</a>
+          </div>
+
+          <!-- Overview -->
+          <section class="view" data-view="overview" aria-labelledby="overview-title">
+            <div class="page-head">
+              <h1 id="overview-title">Knowledge Base Overview</h1>
+              <p>Monitor the status of indexed documents and vector store health.</p>
+            </div>
+
+            <div class="stat-grid">
+              <div class="stat-card accent-orange">
+                <span class="stat-label">Total chunks</span>
+                <span class="stat-value" id="stat-chunks">—</span>
+                <span class="stat-sub">Embedded vectors in DB</span>
+              </div>
+              <div class="stat-card accent-green">
+                <span class="stat-label">Indexed files</span>
+                <span class="stat-value" id="stat-indexed">—</span>
+                <span class="stat-sub">Documents processed</span>
+              </div>
+              <div class="stat-card accent-orange">
+                <span class="stat-label">File types</span>
+                <span class="stat-value" id="stat-types">—</span>
+                <span class="stat-sub">Distinct formats</span>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header">
+                <span class="card-icon orange">
+                  <svg viewBox="0 0 24 24" class="icon"><circle cx="12" cy="12" r="8.5" /><path d="M12 8v4.5M12 15.5v.5" /></svg>
+                </span>
+                <h2>System Status</h2>
+                <span class="card-meta" id="uptime"></span>
+              </div>
+              <ul class="status-list" id="health-list"></ul>
+            </div>
+
+            <div class="card">
+              <div class="card-header">
+                <span class="card-icon green">
+                  <svg viewBox="0 0 24 24" class="icon"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5" /></svg>
+                </span>
+                <h2>Recent Files</h2>
+                <span class="card-meta">Last 5 indexed</span>
+              </div>
+              <div class="table-scroll">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Filename</th>
+                      <th scope="col" class="col-type">Type</th>
+                      <th scope="col" class="col-chunks">Chunks</th>
+                    </tr>
+                  </thead>
+                  <tbody id="recent-body"></tbody>
+                </table>
+              </div>
+              <div class="empty-state" id="recent-empty" hidden>
+                <strong>No indexed files yet</strong><span>Upload documents to build the knowledge base.</span>
+              </div>
+            </div>
+          </section>
+
+          <!-- Upload documents -->
+          <section class="view" data-view="upload" hidden>
+            <div class="card">
+              <div class="card-header">
+                <span class="card-icon orange">
+                  <svg viewBox="0 0 24 24" class="icon"><path d="M12 15V4M7.5 8.5 12 4l4.5 4.5M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" /></svg>
+                </span>
+                <h2>Select Files</h2>
+              </div>
+              <div class="card-body">
+                <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-describedby="dropzone-hint">
+                  <svg viewBox="0 0 24 24" class="icon dropzone-icon"><path d="M12 15V4M7.5 8.5 12 4l4.5 4.5M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" /></svg>
+                  <strong class="dropzone-title">Drop files here or click to browse</strong>
+                  <div class="hint" id="dropzone-hint">Supports PDF, Excel, Word, and image files</div>
+                  <div class="ext-chips" aria-hidden="true">
+                    <span>.pdf</span><span>.xlsx</span><span>.xlsm</span><span>.docx</span><span>.jpg</span><span>.png</span><span>.txt</span>
+                  </div>
+                  <input type="file" id="file-input" multiple class="sr-only" tabindex="-1"
+                    accept=".pdf,.docx,.xlsx,.xlsm,.txt,.md,.json,.png,.jpg,.jpeg,.tif,.tiff" />
+                </div>
+                <div class="queue" id="queue" hidden>
+                  <div class="queue-head"><span id="queue-count"></span><span class="hint" id="queue-size"></span></div>
+                  <ul class="queue-list" id="queue-list"></ul>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header">
+                <span class="card-icon orange">
+                  <svg viewBox="0 0 24 24" class="icon"><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 2" /></svg>
+                </span>
+                <h2>Index Options</h2>
+              </div>
+              <div class="card-body">
+                <p class="note">New files will be parsed, chunked, embedded and added to the vector store. This may take a few minutes depending on file size and count.</p>
+                <div class="upload-panel" id="upload-panel" hidden>
+                  <div class="upload-progress">
+                    <span id="upload-label">Uploading…</span>
+                    <div class="progress"><div class="progress-bar" id="upload-bar"></div></div>
+                  </div>
+                  <ul class="upload-results" id="upload-results"></ul>
+                </div>
+                <div class="form-actions">
+                  <button class="btn btn-primary" type="button" id="save-index" disabled>
+                    <svg viewBox="0 0 24 24" class="icon"><path d="M12 15V4M7.5 8.5 12 4l4.5 4.5M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" /></svg>
+                    Save &amp; Index Documents
+                  </button>
+                  <button class="btn" type="button" id="clear-queue" disabled>Clear Queue</button>
+                  <a class="btn btn-ghost" href="#knowledge" id="view-kb" hidden>View in Knowledge Base</a>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Knowledge base -->
+          <section class="view" data-view="knowledge" hidden>
+            <div class="page-head">
+              <h1>Knowledge Base</h1>
+              <p>Every document in the index, with its processing status and chunk count.</p>
+            </div>
+            <div class="card">
+              <div class="toolbar">
+                <label class="sr-only" for="doc-search">Search documents</label>
+                <input class="input search" id="doc-search" type="search" placeholder="Search by name…" />
+                <label class="sr-only" for="doc-status">Filter by status</label>
+                <select class="input status-filter" id="doc-status">
+                  <option value="">All statuses</option>
+                  <option value="indexed">Indexed</option>
+                  <option value="queued">Queued</option>
+                  <option value="processing">Processing</option>
+                  <option value="failed">Failed</option>
+                </select>
+              </div>
+              <div class="table-scroll">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Filename</th>
+                      <th scope="col" class="col-type">Type</th>
+                      <th scope="col">Status</th>
+                      <th scope="col" class="num">Chunks</th>
+                      <th scope="col" class="num">Size</th>
+                      <th scope="col">Uploaded</th>
+                      <th scope="col"><span class="sr-only">Actions</span></th>
+                    </tr>
+                  </thead>
+                  <tbody id="documents-body"></tbody>
+                </table>
+              </div>
+              <div class="empty-state" id="documents-empty" hidden></div>
+            </div>
+          </section>
+
+          <!-- Re-index -->
+          <section class="view" data-view="reindex" hidden>
+            <div class="page-head">
+              <h1>Re-index</h1>
+              <p>Rebuild the vector store and review ingestion activity.</p>
+            </div>
+            <div class="card">
+              <div class="card-header">
+                <span class="card-icon orange">
+                  <svg viewBox="0 0 24 24" class="icon"><path d="M3 12a9 9 0 1 0 2.6-6.4L3 8" /><path d="M3 3v5h5" /></svg>
+                </span>
+                <h2>Rebuild the index</h2>
+              </div>
+              <div class="card-body">
+                <p class="muted">
+                  Re-embeds every document with the current embedding configuration and swaps the new index in only once it is
+                  complete, so customers keep getting answers while it runs. Use this after changing the embedding model or chunking settings.
+                </p>
+                <button class="btn btn-primary" type="button" id="reindex-all">Reindex all documents</button>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-header">
+                <span class="card-icon green">
+                  <svg viewBox="0 0 24 24" class="icon"><path d="M3 12h4l3-8 4 16 3-8h4" /></svg>
+                </span>
+                <h2>Activity</h2>
+                <label class="sr-only" for="event-level">Filter by level</label>
+                <select class="input status-filter card-meta-control" id="event-level">
+                  <option value="">All levels</option>
+                  <option value="info">Info</option>
+                  <option value="warning">Warnings</option>
+                  <option value="error">Errors</option>
+                </select>
+              </div>
+              <div class="table-scroll">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Time</th>
+                      <th scope="col">Level</th>
+                      <th scope="col">Document</th>
+                      <th scope="col">Message</th>
+                    </tr>
+                  </thead>
+                  <tbody id="events-body"></tbody>
+                </table>
+              </div>
+              <div class="empty-state" id="events-empty" hidden><strong>No activity yet</strong></div>
+            </div>
+          </section>
+
+          <!-- Settings -->
+          <section class="view" data-view="settings" hidden>
+            <div class="page-head">
+              <h1>Settings</h1>
+              <p>Current retrieval, embedding and upload configuration (set via environment variables).</p>
+            </div>
+            <div class="card">
+              <div class="card-header">
+                <span class="card-icon orange">
+                  <svg viewBox="0 0 24 24" class="icon"><ellipse cx="12" cy="5.5" rx="7" ry="2.5" /><path d="M5 5.5v13c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5v-13M5 12c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5" /></svg>
+                </span>
+                <h2>Index configuration</h2>
+              </div>
+              <dl class="config-grid" id="kb-config"></dl>
+            </div>
+          </section>
+        </div>
+      </main>
+    </div>
+
+    <dialog class="modal wide" id="document-dialog" aria-labelledby="document-title">
+      <div class="modal-header">
+        <h2 id="document-title">Document</h2>
+        <button class="icon-btn" type="button" data-close aria-label="Close">
+          <svg viewBox="0 0 24 24" class="icon"><path d="M6 6l12 12M18 6 6 18" /></svg>
+        </button>
+      </div>
+      <div class="modal-body" id="document-body"></div>
+    </dialog>
+
+    <dialog class="viewer" id="viewer-dialog" aria-labelledby="viewer-title">
+      <div class="viewer-header">
+        <span id="viewer-type"></span>
+        <div class="viewer-heading">
+          <h2 id="viewer-title">Document</h2>
+          <span class="hint" id="viewer-meta"></span>
+        </div>
+        <div class="viewer-actions">
+          <button class="btn btn-sm" type="button" id="viewer-details">
+            <svg viewBox="0 0 24 24" class="icon"><circle cx="12" cy="12" r="8.5" /><path d="M12 11v5M12 8v.5" /></svg>
+            Details
+          </button>
+          <a class="btn btn-sm" id="viewer-download" href="#" download>
+            <svg viewBox="0 0 24 24" class="icon"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M4 17v1a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-1" /></svg>
+            Download
+          </a>
+          <button class="btn btn-sm btn-primary" type="button" id="viewer-print">
+            <svg viewBox="0 0 24 24" class="icon"><path d="M7 9V4h10v5M7 17H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2" /><rect x="7" y="14" width="10" height="6" rx="1" /></svg>
+            Print
+          </button>
+          <button class="icon-btn" type="button" data-close aria-label="Close viewer">
+            <svg viewBox="0 0 24 24" class="icon"><path d="M6 6l12 12M18 6 6 18" /></svg>
+          </button>
+        </div>
+      </div>
+      <div class="viewer-tabs" id="viewer-tabs" hidden></div>
+      <div class="viewer-body" id="viewer-body" tabindex="-1" autofocus></div>
+    </dialog>
+
+    <script type="module" src="/static/js/admin.js"></script>
+  </body>
+</html>

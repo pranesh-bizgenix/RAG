@@ -1,0 +1,77 @@
+/* Used by the admin file viewer's hidden print frame. */
+
+@page {
+  margin: 16mm;
+}
+
+body {
+  margin: 0;
+  color: #111;
+  font-family: ui-sans-serif, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  font-size: 11pt;
+  line-height: 1.5;
+}
+
+.print-title {
+  margin: 0 0 12pt;
+  padding-bottom: 6pt;
+  border-bottom: 1px solid #ccc;
+  font-size: 13pt;
+}
+
+h2,
+h3,
+h4,
+h5 {
+  margin: 14pt 0 6pt;
+  break-after: avoid;
+}
+
+p {
+  margin: 0 0 8pt;
+}
+
+img {
+  display: block;
+  max-width: 100%;
+  margin: 0 auto;
+}
+
+table {
+  width: 100%;
+  margin: 8pt 0;
+  border-collapse: collapse;
+  font-size: 9pt;
+}
+
+th,
+td {
+  padding: 3pt 5pt;
+  border: 1px solid #999;
+  text-align: left;
+  vertical-align: top;
+}
+
+th {
+  background: #eee;
+}
+
+thead {
+  display: table-header-group;
+}
+
+tr {
+  break-inside: avoid;
+}
+
+.sheet + .sheet {
+  break-before: page;
+}
+
+.viewer-notice {
+  font-style: italic;
+}
+
+.hint {
+  color: #666;
+}

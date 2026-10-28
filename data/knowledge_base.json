@@ -1,0 +1,12 @@
+{
+  "project": {
+    "name": "RAG Chatbot",
+    "description": "A simple chatbot that retrieves relevant information from local documents before answering questions.",
+    "supported_files": "The ingestion pipeline supports JSON, TXT, Markdown, PDF, DOCX, XLSX, PNG, JPG, and TIFF files."
+  },
+  "usage": {
+    "ingest": "Run python ingestion_pipeline.py --reset to build the local vector store.",
+    "start": "Run python app.py and open http://127.0.0.1:8000 in a browser.",
+    "openai": "Set OPENAI_API_KEY in the .env file for generated answers. Without it, the app runs in retrieval-only mode."
+  }
+}

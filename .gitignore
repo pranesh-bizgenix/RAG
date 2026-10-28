@@ -1,0 +1,12 @@
+.env
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Runtime data: accounts, conversations, uploaded files, and the vector index
+storage/app.db
+storage/app.db-*
+storage/documents/
+storage/*.tmp
+backups/

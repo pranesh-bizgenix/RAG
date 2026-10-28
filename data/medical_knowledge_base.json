@@ -1,0 +1,22 @@
+{
+  "triage": {
+    "fever_adult": "Most adult fevers from minor viral infections resolve with hydration, rest, and symptomatic care. Seek urgent care if fever is above 103 F (39.4 C), lasts longer than 3 days, or is accompanied by confusion, severe headache, stiff neck, breathing difficulty, chest pain, persistent vomiting, or signs of dehydration.",
+    "fever_child": "Children with fever may need same-day evaluation if younger than 3 months, if fever exceeds 102 F for prolonged duration, or if they show poor feeding, lethargy, breathing difficulty, seizure, rash, or signs of dehydration."
+  },
+  "chronic_conditions": {
+    "hypertension": "Lifestyle support for blood pressure includes reduced sodium intake, regular physical activity, healthy body weight, limited alcohol, smoking cessation, and stress reduction. Medication plans should be individualized by a licensed clinician.",
+    "type_2_diabetes": "Type 2 diabetes management commonly includes nutrition planning, regular exercise, blood glucose monitoring, weight management, and medications as prescribed. Patients should monitor for hypoglycemia symptoms such as shakiness, sweating, confusion, and palpitations."
+  },
+  "medication_safety": {
+    "antibiotics": "Antibiotics should only be used for confirmed or strongly suspected bacterial infections and should be taken exactly as prescribed. Incomplete courses and unnecessary use may contribute to antimicrobial resistance.",
+    "pain_relief": "Over-the-counter pain medicines can cause side effects and drug interactions. Avoid exceeding recommended daily limits, and consult a clinician if pain persists or if you have kidney, liver, stomach, heart, or bleeding conditions."
+  },
+  "preventive_care": {
+    "vaccinations": "Routine vaccination schedules reduce risk of serious infectious disease. Adults and children should follow age-appropriate immunization recommendations from local health authorities.",
+    "screening": "Preventive screening for blood pressure, diabetes, certain cancers, and lipid disorders can detect disease early and improve outcomes when done at recommended intervals."
+  },
+  "first_aid": {
+    "minor_burns": "For minor burns, cool the area under running cool water for 20 minutes, remove constrictive items, avoid ice, and cover with a clean non-adhesive dressing. Seek urgent care for deep, large, facial, electrical, chemical, or inhalation burns.",
+    "nosebleed": "For nosebleeds, sit upright, lean forward slightly, and pinch the soft part of the nose continuously for 10 to 15 minutes. Seek emergency care if bleeding is severe, recurrent, follows trauma, or does not stop after direct pressure."
+  }
+}

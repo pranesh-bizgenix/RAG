@@ -164,7 +164,9 @@ long random `CSRF_TOKEN` for Production so consecutive requests remain valid acr
 
 Vercel Functions have instance-local temporary storage. The bundled vector index is loaded on each cold start,
 but conversations, uploads, and changes made in the admin dashboard are temporary and may differ between
-instances. For a durable multi-user production deployment, replace SQLite and the local document/vector files
+instances. Chat queries recreate a missing conversation on the handling instance so requests still complete,
+but history is not guaranteed across reloads or instances. For a durable multi-user production deployment,
+replace SQLite and the local document/vector files
 with managed database, object storage, and vector-store services (or deploy this application on an always-on
 host with a persistent disk).
 

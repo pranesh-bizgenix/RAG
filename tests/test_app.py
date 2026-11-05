@@ -304,6 +304,21 @@ class DocumentAndChatTests(AppTestCase):
         self.assertEqual(client.delete(f"{self.base}/api/conversations/{conversation_id}").status_code, 200)
         self.assertEqual(client.get(f"{self.base}/api/conversations/{conversation_id}").status_code, 404)
 
+    def test_message_recreates_conversation_missing_on_this_instance(self) -> None:
+        client = self.client()
+        conversation_id = client.post(f"{self.base}/api/conversations").json()["id"]
+        with self.app.db.connect() as connection:
+            connection.execute("DELETE FROM conversations WHERE id = ?", (conversation_id,))
+
+        response = client.post(
+            f"{self.base}/api/conversations/{conversation_id}/messages",
+            json={"content": "What topics are covered?"},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertIn("done", [kind for kind, _ in parse_sse(response.text)])
+        restored = client.get(f"{self.base}/api/conversations/{conversation_id}").json()
+        self.assertEqual([message["role"] for message in restored["messages"]], ["user", "assistant"])
+
     def test_delete_all_conversations(self) -> None:
         client = self.client()
         first, _ = self.ask(client, "Question one")

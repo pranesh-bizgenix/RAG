@@ -136,7 +136,12 @@ def register(router: Router, app: "Application") -> None:
 
     @router.add("POST", "/api/conversations/<conversation_id>/messages")
     def send_message(request: Request) -> None:
-        conversation_id = owned(request)
+        conversation_id = request.params["conversation_id"]
+        # Vercel may send conversation creation and message submission to
+        # different instances, each with its own temporary SQLite database.
+        # Recreate the empty conversation locally when necessary so the query
+        # can still be answered instead of failing with a misleading 404.
+        app.conversations.ensure(app.workspace_id, conversation_id)
         content = str(request.json().get("content", "")).strip()
         if not content:
             raise HTTPError(HTTPStatus.BAD_REQUEST, "Message cannot be empty.")

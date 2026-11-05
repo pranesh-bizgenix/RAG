@@ -40,6 +40,23 @@ class ConversationService:
             )
         return conversation
 
+    def ensure(self, user_id: int, conversation_id: str, title: str = DEFAULT_TITLE) -> bool:
+        """Create a missing conversation with a caller-provided id.
+
+        This lets a serverless instance accept a message after conversation
+        creation was handled by another instance with isolated temporary
+        storage. Returns ``True`` when a row was created.
+        """
+        now = utc_now()
+        safe_title = (title or DEFAULT_TITLE).strip()[:120] or DEFAULT_TITLE
+        with self.db.connect() as connection:
+            cursor = connection.execute(
+                "INSERT OR IGNORE INTO conversations (id, user_id, title, created_at, updated_at)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (conversation_id, user_id, safe_title, now, now),
+            )
+        return cursor.rowcount > 0
+
     def get(self, user_id: int, conversation_id: str) -> dict[str, Any] | None:
         with self.db.connect() as connection:
             row = connection.execute(

@@ -13,6 +13,7 @@ from urllib.parse import quote
 
 from api.http import HTTPError, Request, Response, Router
 from services.document_preview import office_preview
+from services.document_service import UNDO_SECONDS
 
 TEXT_EXTENSIONS = {".txt", ".md", ".json"}
 
@@ -138,7 +139,11 @@ def register(router: Router, app: "Application") -> None:
     @router.add("DELETE", "/api/admin/documents/<document_id>")
     def delete_document(request: Request) -> dict:
         removed = app.documents.delete(request.params["document_id"], request.client_ip)
-        return {"ok": True, "removed_chunks": removed}
+        return {"ok": True, "removed_chunks": removed, "undo_seconds": UNDO_SECONDS}
+
+    @router.add("POST", "/api/admin/documents/<document_id>/restore")
+    def restore_document(request: Request) -> dict:
+        return app.documents.restore(request.params["document_id"], request.client_ip)
 
     @router.add("POST", "/api/admin/documents/<document_id>/reindex")
     def reindex_document(request: Request) -> Response:

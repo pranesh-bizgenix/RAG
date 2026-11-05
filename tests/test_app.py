@@ -158,6 +158,23 @@ class DocumentAndChatTests(AppTestCase):
         self.assertEqual(dict(events)["sources"]["sources"], [])
         self.assertFalse(any(self.settings.documents_dir.iterdir()))
 
+    def test_undo_delete_restores_document(self) -> None:
+        admin = self.client()
+        client = self.client()
+        document_id = self.upload_and_index(admin, "returns.txt", b"Returns are accepted within 14 days of delivery.")
+        self.assertEqual(admin.delete(f"{self.base}/api/admin/documents/{document_id}").status_code, 200)
+
+        response = admin.post(f"{self.base}/api/admin/documents/{document_id}/restore")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "indexed")
+        self.assertEqual(len(LocalVectorStore(self.settings.store_path).document_chunks(document_id)), 1)
+        self.assertEqual(admin.get(f"{self.base}/api/admin/documents/{document_id}/file").status_code, 200)
+        _, events = self.ask(client, "Within how many days are returns accepted?")
+        self.assertEqual(dict(events)["sources"]["sources"][0]["document"], "returns.txt")
+
+        # A second restore has nothing left to restore.
+        self.assertEqual(admin.post(f"{self.base}/api/admin/documents/{document_id}/restore").status_code, 410)
+
     def test_multiple_documents_coexist(self) -> None:
         admin = self.client()
         self.upload_and_index(admin, "one.txt", b"Alpha topic about apples.")

@@ -28,6 +28,8 @@ logger = logging.getLogger(__name__)
 
 STATUSES = ("queued", "processing", "indexed", "failed")
 _EMBED_BATCH = 64
+# How long a deleted document stays restorable (kept in memory, so a restart also ends the window).
+UNDO_SECONDS = 60
 
 
 class DocumentError(Exception):
@@ -70,6 +72,8 @@ class DocumentService:
         self._processing: str | None = None
         self._reindex_all_pending = False
         self._worker: threading.Thread | None = None
+        # Recently deleted documents, by id: database row, chunks, file bytes and expiry.
+        self._trash: dict[str, dict[str, Any]] = {}
 
     # Lifecycle.
 
@@ -471,16 +475,86 @@ class DocumentService:
                 raise DocumentError("Document not found.", 404)
             if self._processing == document_id or self._reindex_all_pending:
                 raise DocumentError("This document is being processed. Try again when it finishes.", 409)
+            path = self._file_path(row)
+            self._purge_trash()
+            self._trash[document_id] = {
+                "row": dict(row),
+                "chunks": self.store.document_chunks(document_id),
+                "data": path.read_bytes() if path is not None and path.is_file() else None,
+                "embedding": (self.store.embedding_backend, self.store.embedding_model),
+                "expires": time.monotonic() + UNDO_SECONDS,
+            }
             # Vectors go first: once this returns, no retrieval can surface the document.
             removed = self._commit_store(lambda: self.store.remove_document(document_id))
             with self.db.connect() as connection:
                 connection.execute("DELETE FROM documents WHERE id = ?", (document_id,))
             self._pending.discard(document_id)
-        path = self._file_path(row)
         if path is not None:
             path.unlink(missing_ok=True)
         self._event(document_id, row["filename"], "info", f"Deleted (from {actor}); removed {removed} chunks.")
         return removed
+
+    def _purge_trash(self) -> None:
+        now = time.monotonic()
+        for document_id in [key for key, entry in self._trash.items() if entry["expires"] <= now]:
+            del self._trash[document_id]
+
+    def restore(self, document_id: str, actor: str) -> dict[str, Any]:
+        """Undo a recent delete: put back the database row, original file and indexed chunks."""
+        with self._lock:
+            self._purge_trash()
+            entry = self._trash.get(document_id)
+            if entry is None:
+                raise DocumentError("This document can no longer be restored.", 410)
+            if self._reindex_all_pending:
+                raise DocumentError("Wait for the full reindex to finish before restoring.", 409)
+            row = dict(entry["row"])
+            with self.db.connect() as connection:
+                conflict = connection.execute(
+                    "SELECT filename FROM documents WHERE id = ? OR filename = ? OR (sha256 IS NOT NULL AND sha256 = ?)",
+                    (document_id, row["filename"], row["sha256"]),
+                ).fetchone()
+            if conflict:
+                raise DocumentError(f"Can't restore: \"{conflict['filename']}\" is already in the knowledge base.", 409)
+
+            path = self._file_path(row)
+            if path is not None and entry["data"] is not None:
+                temporary = path.with_name(f"{path.name}.part")
+                temporary.write_bytes(entry["data"])
+                os.replace(temporary, path)
+            chunks = entry["chunks"]
+            requeue = row["status"] in {"queued", "processing"}
+            if chunks and not requeue:
+                try:
+                    self._commit_store(
+                        lambda: self.store.replace_document(
+                            document_id, chunks, [chunk["vector"] for chunk in chunks], *entry["embedding"]
+                        )
+                    )
+                except ValueError:
+                    # The index moved to another embedding model since the delete; rebuild from the file.
+                    requeue = path is not None and entry["data"] is not None
+                    if not requeue:
+                        row.update(status="failed", chunk_count=0, error="Index entries are missing. Reindex this document.")
+            if requeue:
+                row.update(status="queued", error=None)
+            row["updated_at"] = utc_now()
+            try:
+                with self.db.connect() as connection:
+                    connection.execute(
+                        f"INSERT INTO documents ({', '.join(row)}) VALUES ({', '.join('?' for _ in row)})",
+                        tuple(row.values()),
+                    )
+            except Exception:
+                self._commit_store(lambda: self.store.remove_document(document_id))
+                raise
+            del self._trash[document_id]
+            if requeue:
+                self._pending.add(document_id)
+        self._event(document_id, row["filename"], "info", f"Restored (from {actor}).")
+        if requeue:
+            self._queue.put(("document", document_id))
+        return self.get_summary(document_id)  # type: ignore[return-value]
 
     # Queries.
 

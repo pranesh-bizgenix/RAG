@@ -391,6 +391,29 @@ dialog.modal::backdrop {
   border-left-color: var(--danger);
 }
 
+.toast.has-action {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.toast-action {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 4px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.toast-action:hover {
+  background: var(--border);
+}
+
 /* Shared bits */
 
 .spinner {

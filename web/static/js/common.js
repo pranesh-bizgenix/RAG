@@ -99,12 +99,27 @@ function toastHost() {
   return host;
 }
 
-export function toast(message, type = "info") {
+// With ``action`` ({ label, onClick }), the toast gets a button and stays up for ``duration`` ms.
+export function toast(message, type = "info", { action, duration } = {}) {
   const element = document.createElement("div");
   element.className = `toast ${type}`;
-  element.textContent = message;
+  const text = document.createElement("span");
+  text.textContent = message;
+  element.appendChild(text);
+  if (action) {
+    element.classList.add("has-action");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "toast-action";
+    button.textContent = action.label;
+    button.addEventListener("click", () => {
+      element.remove();
+      action.onClick();
+    });
+    element.appendChild(button);
+  }
   toastHost().appendChild(element);
-  setTimeout(() => element.remove(), type === "error" ? 6000 : 3500);
+  setTimeout(() => element.remove(), duration ?? (action ? 10000 : type === "error" ? 6000 : 3500));
 }
 
 // Dialogs

@@ -154,6 +154,20 @@ regenerate, friendly model errors, legacy index import, and the streaming parser
 
 ## Production deployment
 
+### Vercel
+
+The repository includes `api/index.py` and `vercel.json`, so it can be imported directly into Vercel. The
+deployment uses Vercel's Python runtime and needs no build command. Add the `LLM_*` variables in the Vercel
+project settings if generated answers are required; without them, the app runs in retrieval-only mode.
+
+Vercel Functions have instance-local temporary storage. The bundled vector index is loaded on each cold start,
+but conversations, uploads, and changes made in the admin dashboard are temporary and may differ between
+instances. For a durable multi-user production deployment, replace SQLite and the local document/vector files
+with managed database, object storage, and vector-store services (or deploy this application on an always-on
+host with a persistent disk).
+
+For an always-on deployment with persistent local storage:
+
 1. Set `APP_ENV=production` and configure the LLM/embedding variables in `.env` (or real environment variables).
 2. The app has no login, so if other people need access, run it on localhost behind an HTTPS reverse proxy
    that **authenticates** users. Set `TRUST_PROXY=true`. Example Caddyfile with basic auth:

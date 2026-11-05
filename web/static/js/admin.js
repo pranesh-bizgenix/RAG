@@ -267,20 +267,33 @@ $("documents-body").addEventListener("click", async (event) => {
   if (button.dataset.action === "delete") {
     const ok = await confirmDialog({
       title: "Delete document?",
-      message: `"${name}" and all of its indexed chunks will be removed. Customers will no longer get answers from it. This can't be undone.`,
+      message: `"${name}" and all of its indexed chunks will be removed. Customers will no longer get answers from it. You can undo this for a short time afterwards.`,
       confirmLabel: "Delete document",
       danger: true,
     });
     if (!ok) return;
     try {
       const result = await api(`/api/admin/documents/${id}`, { method: "DELETE" });
-      toast(`Deleted "${name}" (${result.removed_chunks} chunks removed).`);
+      toast(`Deleted "${name}" (${result.removed_chunks} chunks removed).`, "info", {
+        action: { label: "Undo", onClick: () => restoreDocument(id, name) },
+        duration: Math.min(result.undo_seconds || 15, 15) * 1000,
+      });
       refresh();
     } catch (error) {
       toast(error.message, "error");
     }
   }
 });
+
+async function restoreDocument(id, name) {
+  try {
+    await api(`/api/admin/documents/${id}/restore`, { method: "POST" });
+    toast(`Restored "${name}".`);
+    refresh();
+  } catch (error) {
+    toast(error.message, "error");
+  }
+}
 
 const documentDialog = $("document-dialog");
 closeOnBackdrop(documentDialog);

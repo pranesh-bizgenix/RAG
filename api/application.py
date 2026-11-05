@@ -75,7 +75,10 @@ class Application:
         # No accounts: everyone shares one workspace. The CSRF token stops other websites from
         # sending commands through a visitor's browser.
         self.workspace_id = ensure_workspace(self.db)
-        self.csrf_token = secrets.token_urlsafe(32)
+        # Serverless platforms can route consecutive browser requests to
+        # different instances. A configured token keeps CSRF validation stable
+        # across those instances; local runs still receive a random token.
+        self.csrf_token = settings.csrf_token or secrets.token_urlsafe(32)
         self.conversations = ConversationService(self.db)
         self.documents = DocumentService(self.db, self.store, settings, self.embedding_client)
         self.chatbot = RAGChatbot(

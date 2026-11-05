@@ -100,6 +100,20 @@ class AppTestCase(unittest.TestCase):
 
 
 class AccessTests(AppTestCase):
+    def test_configured_csrf_token_is_stable_across_instances(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            settings = Settings(
+                store_path=root / "vectors.json",
+                db_path=root / "app.db",
+                documents_dir=root / "documents",
+                csrf_token="shared-serverless-token",
+            )
+            first = Application(settings, llm=None, embedding_client=APIEmbeddingClient())
+            second = Application(settings, llm=None, embedding_client=APIEmbeddingClient())
+            self.assertEqual(first.csrf_token, "shared-serverless-token")
+            self.assertEqual(first.csrf_token, second.csrf_token)
+
     def test_everything_is_available_without_signing_in(self) -> None:
         self.assertEqual(requests.get(f"{self.base}/").status_code, 200)
         self.assertEqual(requests.get(f"{self.base}/admin").status_code, 200)

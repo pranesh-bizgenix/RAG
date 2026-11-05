@@ -94,6 +94,7 @@ All settings live in `.env`; see `.env.example` for the full, commented list. Th
 | `CHAT_MESSAGES_PER_MINUTE`, `MAX_CONCURRENT_GENERATIONS` | Abuse and load limits |
 | `APP_HOST` | `127.0.0.1` keeps the app private to this computer |
 | `TRUST_PROXY` | Read client IP/host from a reverse proxy you control |
+| `CSRF_TOKEN` | Shared random token required when requests can reach multiple app instances |
 
 Any OpenAI-compatible API works for generation, including OpenAI, Groq, OpenRouter, Together, Ollama, and LM Studio:
 
@@ -158,7 +159,8 @@ regenerate, friendly model errors, legacy index import, and the streaming parser
 
 The repository includes `api/index.py` and `vercel.json`, so it can be imported directly into Vercel. The
 deployment uses Vercel's Python runtime and needs no build command. Add the `LLM_*` variables in the Vercel
-project settings if generated answers are required; without them, the app runs in retrieval-only mode.
+project settings if generated answers are required; without them, the app runs in retrieval-only mode. Set one
+long random `CSRF_TOKEN` for Production so consecutive requests remain valid across function instances.
 
 Vercel Functions have instance-local temporary storage. The bundled vector index is loaded on each cold start,
 but conversations, uploads, and changes made in the admin dashboard are temporary and may differ between

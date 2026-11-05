@@ -55,6 +55,7 @@ class Settings:
     chunk_overlap: int = 40
     log_level: str = "INFO"
     log_format: str = "text"
+    csrf_token: str = ""
 
     @property
     def is_production(self) -> bool:
@@ -85,5 +86,6 @@ class Settings:
             chunk_overlap=_int("CHUNK_OVERLAP", 40),
             log_level=os.getenv("LOG_LEVEL", "INFO").strip().upper() or "INFO",
             log_format=os.getenv("LOG_FORMAT", "json" if env == "production" else "text").strip().lower(),
+            csrf_token=os.getenv("CSRF_TOKEN", "").strip(),
         )
         return replace(settings, **overrides) if overrides else settings

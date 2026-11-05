@@ -20,6 +20,24 @@ MAX_MESSAGE_CHARS = 4000
 UNAVAILABLE = "The assistant is temporarily unavailable. Please try again in a moment."
 
 
+def _suggestions(app: "Application") -> dict:
+    """Build the welcome prompts once for both bootstrap and the legacy endpoint."""
+    names = [
+        " ".join(Path(name).stem.replace("_", " ").replace("-", " ").split())
+        for name in app.documents.document_names(3)
+    ]
+    prompts: list[dict[str, str]] = []
+    if names:
+        prompts.append({"category": "Summary", "text": f"Summarize {names[0]}"})
+        prompts.append({"category": "Key facts", "text": f"What are the key facts and figures in {names[0]}?"})
+        if len(names) > 1:
+            prompts.append({"category": "Compare", "text": f"Compare {names[0]} and {names[1]}"})
+        else:
+            prompts.append({"category": "Details", "text": f"List the important dates, names, and amounts in {names[0]}"})
+        prompts.append({"category": "Overview", "text": "What topics does the knowledge base cover?"})
+    return {"suggestions": prompts, "has_documents": bool(names)}
+
+
 def register(router: Router, app: "Application") -> None:
     def owned(request: Request) -> str:
         conversation_id = request.params["conversation_id"]
@@ -36,20 +54,18 @@ def register(router: Router, app: "Application") -> None:
     def session(request: Request) -> dict:
         return {"csrf_token": app.csrf_token}
 
+    @router.add("GET", "/api/bootstrap")
+    def bootstrap(request: Request) -> dict:
+        """Load all initial chat state in one instance-consistent request."""
+        return {
+            "csrf_token": app.csrf_token,
+            "conversations": app.conversations.list(app.workspace_id),
+            **_suggestions(app),
+        }
+
     @router.add("GET", "/api/suggestions")
     def suggestions(request: Request) -> dict:
-        # "MoM_Prem_Mehta_CRM.txt" reads (and still searches) better as "MoM Prem Mehta CRM".
-        names = [" ".join(Path(name).stem.replace("_", " ").replace("-", " ").split()) for name in app.documents.document_names(3)]
-        prompts: list[dict[str, str]] = []
-        if names:
-            prompts.append({"category": "Summary", "text": f"Summarize {names[0]}"})
-            prompts.append({"category": "Key facts", "text": f"What are the key facts and figures in {names[0]}?"})
-            if len(names) > 1:
-                prompts.append({"category": "Compare", "text": f"Compare {names[0]} and {names[1]}"})
-            else:
-                prompts.append({"category": "Details", "text": f"List the important dates, names, and amounts in {names[0]}"})
-            prompts.append({"category": "Overview", "text": "What topics does the knowledge base cover?"})
-        return {"suggestions": prompts, "has_documents": bool(names)}
+        return _suggestions(app)
 
     @router.add("GET", "/api/conversations")
     def list_conversations(request: Request) -> dict:

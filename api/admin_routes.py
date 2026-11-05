@@ -39,9 +39,21 @@ def _multipart_files(request: Request, limit: int) -> list[tuple[str, bytes]]:
 def register(router: Router, app: "Application") -> None:
     settings = app.settings
 
+    def overview_payload(request: Request) -> dict:
+        return {
+            **app.documents.overview(),
+            "recent_events": app.documents.events(limit=8),
+            "recent_documents": app.documents.list(status="indexed", limit=5),
+            "health": health(request),
+        }
+
     @router.add("GET", "/api/admin/overview")
     def overview(request: Request) -> dict:
-        return {**app.documents.overview(), "recent_events": app.documents.events(limit=8)}
+        return overview_payload(request)
+
+    @router.add("GET", "/api/admin/bootstrap")
+    def bootstrap(request: Request) -> dict:
+        return {"csrf_token": app.csrf_token, **overview_payload(request)}
 
     @router.add("GET", "/api/admin/health")
     def health(request: Request) -> dict:
@@ -49,8 +61,29 @@ def register(router: Router, app: "Application") -> None:
         storage_ok = settings.store_path.parent.exists() and settings.documents_dir.exists()
         checks = [
             {"name": "Database", "ok": app.db.ping(), "detail": f"Schema version {app.db.schema_version}"},
-            {"name": "Ingestion worker", "ok": app.documents.worker_alive, "detail": "Running" if app.documents.worker_alive else "Stopped"},
+            {
+                "name": "Ingestion",
+                "ok": app.documents.worker_alive,
+                "detail": (
+                    "Inline per request (serverless)"
+                    if settings.inline_ingestion
+                    else "Running"
+                    if app.documents.worker_alive
+                    else "Stopped"
+                ),
+            },
             {"name": "Storage", "ok": storage_ok, "detail": "Vector index and document storage available" if storage_ok else "Storage directory missing"},
+            *(
+                [
+                    {
+                        "name": "Persistence",
+                        "ok": False,
+                        "detail": "Vercel temporary storage; uploads and history are not durable",
+                    }
+                ]
+                if settings.inline_ingestion
+                else []
+            ),
             {
                 "name": "Language model",
                 "ok": llm is not None and app.chatbot.last_llm_error is None,

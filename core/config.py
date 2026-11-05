@@ -56,6 +56,7 @@ class Settings:
     log_level: str = "INFO"
     log_format: str = "text"
     csrf_token: str = ""
+    inline_ingestion: bool = False
 
     @property
     def is_production(self) -> bool:

@@ -5,7 +5,6 @@ import {
   escapeHtml,
   formatBytes,
   formatDate,
-  loadSession,
   session,
   toast,
   toggleTheme,
@@ -60,7 +59,12 @@ const ICONS = {
   trash: '<svg viewBox="0 0 24 24" class="icon"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>',
 };
 
-const state = { view: "overview", limits: { max_upload_mb: 25, max_files_per_upload: 10 }, pollTimer: null };
+const state = {
+  view: "overview",
+  limits: { max_upload_mb: 25, max_files_per_upload: 10 },
+  pollTimer: null,
+  prefetchedOverview: null,
+};
 
 function statusPill(status) {
   const [className, label] = STATUS[status] || ["", status];
@@ -83,7 +87,7 @@ function showView(name) {
   document.title = `${VIEWS[name].title} · Admin · Knowledge Copilot`;
   $("layout").classList.remove("nav-open");
   $("scrim").hidden = true;
-  refresh();
+  return refresh();
 }
 
 async function refresh() {
@@ -132,15 +136,13 @@ function setReindexBanner(needed) {
 // Overview
 
 async function loadOverview() {
-  const [overview, health, data] = await Promise.all([
-    api("/api/admin/overview"),
-    api("/api/admin/health"),
-    api("/api/admin/documents?status=indexed"),
-  ]);
-  const indexed = data.documents;
+  const overview = state.prefetchedOverview || (await api("/api/admin/overview"));
+  state.prefetchedOverview = null;
+  const health = overview.health;
+  const indexed = overview.recent_documents;
   $("stat-chunks").textContent = overview.chunks.toLocaleString();
   $("stat-indexed").textContent = overview.documents.indexed.toLocaleString();
-  $("stat-types").textContent = new Set(indexed.map((doc) => fileType(doc.filename)[0])).size;
+  $("stat-types").textContent = overview.file_types.toLocaleString();
   setReindexBanner(overview.index.needs_reindex);
 
   const hours = Math.floor(health.uptime_seconds / 3600);
@@ -630,13 +632,18 @@ $("save-index").addEventListener("click", () => {
 
 function renderUploadResults(results) {
   $("upload-results").innerHTML = results
-    .map(
-      (result) => `<li>
+    .map((result) => {
+      const detail = result.ok
+        ? result.document?.status === "indexed"
+          ? "Indexed and ready to search."
+          : "Indexing in the background; track its status in the Knowledge Base."
+        : result.error;
+      return `<li>
         ${result.ok ? '<span class="pill pill-success">Uploaded</span>' : '<span class="pill pill-danger">Rejected</span>'}
         <span class="name">${escapeHtml(result.filename)}</span>
-        <span class="${result.ok ? "detail" : "error"}">${escapeHtml(result.ok ? "Indexing in the background; track its status in the Knowledge Base." : result.error)}</span>
-      </li>`
-    )
+        <span class="${result.ok ? "detail" : "error"}">${escapeHtml(detail)}</span>
+      </li>`;
+    })
     .join("");
 }
 
@@ -667,8 +674,11 @@ function uploadFiles(accepted) {
     }
     if (data && data.results) {
       const ok = data.results.filter((result) => result.ok).length;
+      const pending = data.results.some(
+        (result) => result.ok && ["queued", "processing"].includes(result.document?.status)
+      );
       $("upload-label").textContent = ok
-        ? `Uploaded ${ok} of ${accepted.length}. Indexing runs in the background.`
+        ? `Uploaded ${ok} of ${accepted.length}. ${pending ? "Indexing is in progress." : "Ready to search."}`
         : "None of the files could be uploaded.";
       renderUploadResults(data.results);
       $("view-kb").hidden = ok === 0;
@@ -777,9 +787,11 @@ function renderEvents(events) {
 // Startup
 
 async function init() {
-  await loadSession();
+  const bootstrap = await api("/api/admin/bootstrap");
+  session.csrf = bootstrap.csrf_token || "";
+  state.prefetchedOverview = bootstrap;
   updateThemeLabel();
-  showView(location.hash.slice(1) || "overview");
+  await showView(location.hash.slice(1) || "overview");
 }
 
 init().catch((error) => toast(error.message || "Failed to load the dashboard.", "error"));

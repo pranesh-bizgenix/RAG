@@ -11,7 +11,7 @@ from core.config import PROJECT_ROOT
 if TYPE_CHECKING:
     from api.application import Application
 
-WEB_DIR = PROJECT_ROOT / "web"
+WEB_DIR = PROJECT_ROOT / "public"
 STATIC_DIR = (WEB_DIR / "static").resolve()
 CONTENT_TYPES = {
     ".css": "text/css; charset=utf-8",
@@ -33,7 +33,7 @@ def _redirect(location: str) -> Response:
 def register(router: Router, app: "Application") -> None:
     @router.add("GET", "/")
     def chat_page(request: Request) -> Response:
-        return _page("chat.html")
+        return _page("index.html")
 
     @router.add("GET", "/admin")
     def admin_page(request: Request) -> Response:

@@ -2,7 +2,8 @@
 
 Vercel imports ``handler`` and creates one instance for every request.  The
 application itself is kept at module scope so warm function instances can
-reuse the database, vector index, and ingestion worker.
+reuse their temporary database and vector index. Ingestion runs inside the
+request because background threads are not a durable serverless job system.
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ import json
 import shutil
 import tempfile
 import threading
+from dataclasses import replace
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -41,14 +43,18 @@ def _runtime_settings() -> Settings:
             chunk.pop("document_id", None)
         store_path.write_text(json.dumps(payload, ensure_ascii=True), encoding="utf-8")
 
-    return Settings.from_env(
+    settings = Settings.from_env(
         env="production",
         host="0.0.0.0",
         trust_proxy=True,
         db_path=_RUNTIME_ROOT / "app.db",
         store_path=store_path,
         documents_dir=documents_dir,
+        inline_ingestion=True,
     )
+    # Function requests are limited to 4.5 MB. Keep multipart overhead below
+    # that ceiling and accept a single file per serverless upload request.
+    return replace(settings, max_upload_mb=min(settings.max_upload_mb, 4), max_files_per_upload=1)
 
 
 def _application() -> Application:

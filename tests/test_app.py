@@ -122,6 +122,42 @@ class AccessTests(AppTestCase):
         login = requests.get(f"{self.base}/login", allow_redirects=False)
         self.assertEqual((login.status_code, login.headers["Location"]), (302, "/"))
 
+    def test_bootstrap_endpoints_return_initial_state_and_csrf(self) -> None:
+        chat = requests.get(f"{self.base}/api/bootstrap")
+        self.assertEqual(chat.status_code, 200)
+        self.assertEqual(chat.json()["csrf_token"], self.app.csrf_token)
+        self.assertEqual(chat.json()["conversations"], [])
+        self.assertIn("suggestions", chat.json())
+
+        admin = requests.get(f"{self.base}/api/admin/bootstrap")
+        self.assertEqual(admin.status_code, 200)
+        self.assertEqual(admin.json()["csrf_token"], self.app.csrf_token)
+        self.assertEqual(admin.json()["file_types"], 0)
+        self.assertIn("health", admin.json())
+        self.assertIn("recent_documents", admin.json())
+
+    def test_inline_ingestion_finishes_before_serverless_response(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            settings = Settings(
+                store_path=root / "vectors.json",
+                db_path=root / "app.db",
+                documents_dir=root / "documents",
+                inline_ingestion=True,
+            )
+            app = Application(settings, llm=None, embedding_client=APIEmbeddingClient())
+            app.start()
+            result = app.documents.upload([("inline.txt", b"A durable fact for the knowledge base.")], None)[0]
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["document"]["status"], "indexed")
+            self.assertTrue(app.documents.worker_alive)
+
+            reindexed = app.documents.reindex(result["document"]["id"])
+            self.assertEqual(reindexed["status"], "indexed")
+            self.assertEqual(app.documents.reindex_all(), 1)
+            self.assertEqual(app.documents.get_summary(result["document"]["id"])["status"], "indexed")
+            app.stop()
+
     def test_state_changes_require_csrf_token(self) -> None:
         client = self.client()
         del client.headers["X-CSRF-Token"]

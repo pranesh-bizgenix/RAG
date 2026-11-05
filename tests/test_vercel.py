@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import unittest
+from pathlib import Path
 
 from api.index import _original_target
 
@@ -17,6 +19,15 @@ class VercelAdapterTests(unittest.TestCase):
 
     def test_local_request_is_unchanged(self) -> None:
         self.assertEqual(_original_target("/api/health"), "/api/health")
+
+    def test_static_frontend_is_not_rewritten_through_python(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        config = json.loads((root / "vercel.json").read_text(encoding="utf-8"))
+        sources = [item["source"] for item in config["rewrites"]]
+        self.assertIn("/api/:path*", sources)
+        self.assertNotIn("/(.*)", sources)
+        self.assertTrue((root / "public" / "index.html").is_file())
+        self.assertTrue((root / "public" / "static" / "js" / "chat.js").is_file())
 
 
 if __name__ == "__main__":

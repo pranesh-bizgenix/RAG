@@ -171,7 +171,10 @@ class EventStream:
             readable, _, _ = select.select([connection], [], [], 0)
             return bool(readable) and connection.recv(1, socket.MSG_PEEK) == b""
         except (OSError, ValueError):
-            return True
+            # Some serverless HTTP adapters do not expose a selectable socket.
+            # Let the write below determine whether the client is gone instead
+            # of treating an unsupported probe as a real disconnect.
+            return False
 
     def send(self, event: str, data: dict[str, Any]) -> None:
         if self.client_gone():

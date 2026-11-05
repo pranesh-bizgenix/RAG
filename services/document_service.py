@@ -79,6 +79,8 @@ class DocumentService:
 
     def start(self) -> None:
         self.reconcile()
+        if self.settings.inline_ingestion:
+            return
         self._worker = threading.Thread(target=self._run, name="ingestion-worker", daemon=True)
         self._worker.start()
 
@@ -89,7 +91,7 @@ class DocumentService:
 
     @property
     def worker_alive(self) -> bool:
-        return bool(self._worker and self._worker.is_alive())
+        return self.settings.inline_ingestion or bool(self._worker and self._worker.is_alive())
 
     def wait_idle(self, timeout: float = 30) -> bool:
         deadline = time.monotonic() + timeout
@@ -204,17 +206,23 @@ class DocumentService:
         counts: dict[str, int] = {}
         for chunk in self.store.chunks:
             counts[str(chunk.get("document_id"))] = counts.get(str(chunk.get("document_id")), 0) + 1
+        resume_inline: list[str] = []
         for row in rows:
             if row["status"] in {"queued", "processing"}:
                 self._update(row["id"], status="queued")
                 self._pending.add(row["id"])
-                self._queue.put(("document", row["id"]))
+                if self.settings.inline_ingestion:
+                    resume_inline.append(row["id"])
+                else:
+                    self._queue.put(("document", row["id"]))
                 self._event(row["id"], row["filename"], "info", "Re-queued after restart.")
             elif row["status"] == "indexed" and not counts.get(row["id"]):
                 self._update(row["id"], status="failed", chunk_count=0, error="Index entries are missing. Reindex this document.")
                 self._event(row["id"], row["filename"], "warning", "Index entries were missing; marked as failed.")
             elif row["status"] == "indexed":
                 self._update(row["id"], chunk_count=counts[row["id"]])
+        for document_id in resume_inline:
+            self._process_document(document_id)
 
     def _import_legacy_chunks(self) -> None:
         """Adopt chunks indexed before document tracking existed, grouped by filename."""
@@ -304,7 +312,10 @@ class DocumentService:
                 raise UploadError("This document was uploaded at the same time by another request.") from exc
             self._pending.add(document_id)
         self._event(document_id, filename, "info", f"Uploaded ({_size_label(len(data))}); queued for indexing.")
-        self._queue.put(("document", document_id))
+        if self.settings.inline_ingestion:
+            self._process_document(document_id)
+        else:
+            self._queue.put(("document", document_id))
         return self.get_summary(document_id)  # type: ignore[return-value]
 
     # Worker.
@@ -449,7 +460,10 @@ class DocumentService:
             self._update(document_id, status="queued", error=None)
             self._pending.add(document_id)
         self._event(document_id, row["filename"], "info", "Queued for reindexing.")
-        self._queue.put(("document", document_id))
+        if self.settings.inline_ingestion:
+            self._process_document(document_id)
+        else:
+            self._queue.put(("document", document_id))
         return self.get_summary(document_id)  # type: ignore[return-value]
 
     def reindex_all(self) -> int:
@@ -465,7 +479,11 @@ class DocumentService:
                 self._update(document_id, status="queued")
             self._reindex_all_pending = True
             self._pending.update(ids)
-        self._queue.put(("all", tuple(sorted(ids))))
+        ordered_ids = tuple(sorted(ids))
+        if self.settings.inline_ingestion:
+            self._process_reindex_all(ordered_ids)
+        else:
+            self._queue.put(("all", ordered_ids))
         return len(ids)
 
     def delete(self, document_id: str, actor: str) -> int:
@@ -573,7 +591,7 @@ class DocumentService:
             row = connection.execute(f"{self._SELECT} WHERE d.id = ?", (document_id,)).fetchone()
         return self._summary(row) if row else None
 
-    def list(self, search: str = "", status: str = "") -> list[dict[str, Any]]:
+    def list(self, search: str = "", status: str = "", limit: int = 500) -> list[dict[str, Any]]:
         clauses, params = [], []
         if search.strip():
             clauses.append("d.filename LIKE ? ESCAPE '\\'")
@@ -584,7 +602,10 @@ class DocumentService:
             params.append(status)
         where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
         with self.db.connect() as connection:
-            rows = connection.execute(f"{self._SELECT}{where} ORDER BY d.created_at DESC", params).fetchall()
+            rows = connection.execute(
+                f"{self._SELECT}{where} ORDER BY d.created_at DESC LIMIT ?",
+                (*params, max(1, min(limit, 500))),
+            ).fetchall()
         return [self._summary(row) for row in rows]
 
     def original(self, document_id: str) -> tuple[Path, str, str]:
@@ -651,6 +672,11 @@ class DocumentService:
                 row["status"]: row["total"]
                 for row in connection.execute("SELECT status, COUNT(*) AS total FROM documents GROUP BY status")
             }
+            file_types = {
+                Path(row["filename"]).suffix.lower()
+                for row in connection.execute("SELECT filename FROM documents WHERE status = 'indexed'")
+                if Path(row["filename"]).suffix
+            }
             last = connection.execute("SELECT MAX(created_at) FROM ingestion_events").fetchone()[0]
         return {
             "documents": {
@@ -660,6 +686,7 @@ class DocumentService:
                 "failed": counts.get("failed", 0),
             },
             "chunks": len(self.store.chunks),
+            "file_types": len(file_types),
             "last_activity": last,
             "worker": {"alive": self.worker_alive, "queued_jobs": self._queue.qsize(), "reindexing_all": self._reindex_all_pending},
             "index": self.index_info(),

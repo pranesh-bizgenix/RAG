@@ -42,7 +42,7 @@ rag/
 parsers/                 # PDF, Word, Excel, image OCR, JSON, text loaders
 vectorstore/             # JSON vector store (thread-safe, atomic saves) + CLI tools
 ui/admin.py              # chunking helpers
-web/                     # chat.html, admin.html, static/css, static/js
+public/                  # Vercel-CDN frontend: index.html, admin.html, static/css, static/js
 storage/                 # app.db, vectors.json, documents/ (created at runtime)
 tests/                   # unit and end-to-end tests
 ```
@@ -61,7 +61,8 @@ its vectors first, then its record and file.
 ## 1. Setup
 
 ```powershell
-cd C:\Users\prane\Desktop\RAG
+cd path\to\RAG
+py -3.12 -m venv venv
 .\venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 Copy-Item .env.example .env      # then edit .env
@@ -117,7 +118,7 @@ isn't detected automatically; reindex all documents after changing them.
   same-origin `Origin`. Other websites you visit can't upload, delete, or chat through your browser.
 - **Uploads:** extension allow-list, per-file and per-request size limits, content-signature checks (e.g. a
   `.pdf` must start with `%PDF-`), sanitized names, and storage under server-generated names, so there's no
-  path traversal. Static files are served only from `web/static`.
+  path traversal. Static files are served only from `public/static`.
 - **Headers:** strict Content-Security-Policy (no inline scripts), `X-Frame-Options: DENY`, `nosniff`.
 - **Prompt injection:** the model is told to treat retrieved passages as reference only. Raw provider errors are
   never shown in the chat; details go to the server log.
@@ -131,6 +132,7 @@ the `X-CSRF-Token` header returned by `GET /api/session`.
 | Method & path | Description |
 |---|---|
 | `GET /api/session` | CSRF token for this server run |
+| `GET /api/bootstrap` | Chat startup state (CSRF token, conversations, suggestions) |
 | `GET /api/health` | `ok` / `degraded` (database + ingestion worker) |
 | `GET/POST /api/conversations` | List / create conversations |
 | `GET/PATCH/DELETE /api/conversations/{id}` | Read with messages / rename / delete |
@@ -158,9 +160,14 @@ regenerate, friendly model errors, legacy index import, and the streaming parser
 ### Vercel
 
 The repository includes `api/index.py` and `vercel.json`, so it can be imported directly into Vercel. The
-deployment uses Vercel's Python runtime and needs no build command. Add the `LLM_*` variables in the Vercel
-project settings if generated answers are required; without them, the app runs in retrieval-only mode. Set one
-long random `CSRF_TOKEN` for Production so consecutive requests remain valid across function instances.
+deployment uses Vercel's Python runtime and needs no build command. The frontend under `public/` is served by
+Vercel's CDN; only `/api/*` invokes Python. Add the `LLM_*` variables in the Vercel project settings if generated
+answers are required; without them, the app runs in retrieval-only mode. Set one long random `CSRF_TOKEN` for
+Production so consecutive requests remain valid across function instances. Redeploy after changing variables.
+
+Vercel Function request bodies are limited to 4.5 MB. The serverless adapter therefore advertises a 4 MB,
+one-file upload limit and performs ingestion inside the upload request instead of relying on a background thread.
+Larger uploads require a direct-to-object-storage flow, which this filesystem-backed version does not implement.
 
 Vercel Functions have instance-local temporary storage. The bundled vector index is loaded on each cold start,
 but conversations, uploads, and changes made in the admin dashboard are temporary and may differ between
@@ -169,6 +176,10 @@ but history is not guaranteed across reloads or instances. For a durable multi-u
 replace SQLite and the local document/vector files
 with managed database, object storage, and vector-store services (or deploy this application on an always-on
 host with a persistent disk).
+
+In practical terms, Vercel is suitable for the read-mostly chat experience backed by the vector index committed
+with the deployment. Do not treat its Admin uploads, conversation history, or index changes as durable until
+SQLite/document/vector persistence has been moved to shared external services.
 
 For an always-on deployment with persistent local storage:
 

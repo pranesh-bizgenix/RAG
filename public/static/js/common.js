@@ -10,12 +10,6 @@ export class ApiError extends Error {
   }
 }
 
-export async function loadSession() {
-  const response = await fetch("/api/session", { credentials: "same-origin" });
-  session.csrf = (await response.json()).csrf_token || "";
-  return session;
-}
-
 export async function api(path, { method = "GET", json, body, signal } = {}) {
   const init = { method, credentials: "same-origin", headers: {}, signal };
   if (method !== "GET") init.headers["X-CSRF-Token"] = session.csrf;

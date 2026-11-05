@@ -4,7 +4,6 @@ import {
   closeOnBackdrop,
   confirmDialog,
   copyText,
-  loadSession,
   session,
   toast,
   toggleTheme,
@@ -95,12 +94,6 @@ function renderConversationList() {
     row.append(link, actions);
     listEl.appendChild(row);
   }
-}
-
-async function loadConversations() {
-  const data = await api("/api/conversations");
-  state.conversations = data.conversations;
-  renderConversationList();
 }
 
 function touchConversation(id, title) {
@@ -637,42 +630,40 @@ $("about-button").addEventListener("click", () => aboutDialog.showModal());
 
 // Startup
 
-async function loadSuggestions() {
+function renderSuggestions(data) {
   const container = $("suggestions");
-  try {
-    const data = await api("/api/suggestions");
-    if (!data.has_documents) {
-      $("welcome-text").textContent =
-        "The knowledge base is empty right now. Once an administrator adds documents, you can ask questions about them here.";
-    }
-    container.replaceChildren(
-      ...data.suggestions.map((item) => {
-        // Older servers send plain strings; newer ones send { category, text }.
-        const { category, text } = typeof item === "string" ? { category: "Suggested", text: item } : item;
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = "suggestion";
-        button.title = text;
-        const label = document.createElement("span");
-        label.className = "suggestion-category";
-        label.textContent = category;
-        const question = document.createElement("span");
-        question.className = "suggestion-text";
-        question.textContent = text;
-        button.append(label, question);
-        button.addEventListener("click", () => send(text));
-        return button;
-      })
-    );
-  } catch {
-    container.replaceChildren();
+  if (!data.has_documents) {
+    $("welcome-text").textContent =
+      "The knowledge base is empty right now. Once an administrator adds documents, you can ask questions about them here.";
   }
+  container.replaceChildren(
+    ...data.suggestions.map((item) => {
+      // Older servers send plain strings; newer ones send { category, text }.
+      const { category, text } = typeof item === "string" ? { category: "Suggested", text: item } : item;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "suggestion";
+      button.title = text;
+      const label = document.createElement("span");
+      label.className = "suggestion-category";
+      label.textContent = category;
+      const question = document.createElement("span");
+      question.className = "suggestion-text";
+      question.textContent = text;
+      button.append(label, question);
+      button.addEventListener("click", () => send(text));
+      return button;
+    })
+  );
 }
 
 async function init() {
-  await loadSession();
+  const bootstrap = await api("/api/bootstrap");
+  session.csrf = bootstrap.csrf_token || "";
+  state.conversations = bootstrap.conversations;
+  renderConversationList();
+  renderSuggestions(bootstrap);
   autosize();
-  await Promise.all([loadConversations(), loadSuggestions()]);
   const id = location.hash.slice(1);
   if (/^[0-9a-f]{32}$/.test(id)) await openConversation(id);
   else prompt.focus();

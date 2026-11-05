@@ -13,6 +13,7 @@ import tempfile
 import threading
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from api.application import Application
 from core.config import PROJECT_ROOT, Settings
@@ -63,6 +64,20 @@ def _application() -> Application:
     return _APP
 
 
+def _original_target(target: str) -> str:
+    """Restore the public route carried through Vercel's internal rewrite."""
+    parsed = urlsplit(target)
+    query = parse_qsl(parsed.query, keep_blank_values=True)
+    public_paths = [value for key, value in query if key == "__path"]
+    if not public_paths:
+        return target
+    public_path = public_paths[-1]
+    if not public_path.startswith("/"):
+        public_path = f"/{public_path}"
+    remaining = [(key, value) for key, value in query if key != "__path"]
+    return urlunsplit(("", "", public_path, urlencode(remaining), ""))
+
+
 class handler(BaseHTTPRequestHandler):
     """Forward every Vercel request through the application's guarded router."""
 
@@ -70,6 +85,7 @@ class handler(BaseHTTPRequestHandler):
     sys_version = ""
 
     def do_GET(self) -> None:  # noqa: N802
+        self.path = _original_target(self.path)
         _application().dispatch(self)
 
     do_HEAD = do_POST = do_PUT = do_PATCH = do_DELETE = do_GET

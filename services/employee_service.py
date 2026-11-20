@@ -6,11 +6,10 @@ import hashlib
 import hmac
 import os
 import re
-import sqlite3
 import uuid
 from typing import Any
 
-from core.database import Database, utc_now
+from core.database import Database, IntegrityError, utc_now
 from services.document_service import DocumentError
 
 EMPLOYEE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{2,63}$")
@@ -70,7 +69,7 @@ class EmployeeService:
                     "INSERT INTO departments (id, name, created_at) VALUES (?, ?, ?)",
                     (department_id, name, utc_now()),
                 )
-        except sqlite3.IntegrityError as exc:
+        except IntegrityError as exc:
             raise DocumentError("A department with this name already exists.", 409) from exc
         return next(item for item in self.departments() if item["id"] == department_id)
 
@@ -108,7 +107,7 @@ class EmployeeService:
             raise DocumentError("Enter a password for the employee.")
         return employee_id, name, email, department_id, password or None
 
-    def _require_department(self, connection: sqlite3.Connection, department_id: str) -> str:
+    def _require_department(self, connection: Any, department_id: str) -> str:
         row = connection.execute("SELECT name FROM departments WHERE id = ?", (department_id,)).fetchone()
         if not row:
             raise DocumentError("Choose a valid department.")
@@ -153,7 +152,7 @@ class EmployeeService:
                     " VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?)",
                     (employee_id, name, email, _password_hash(password or ""), department_id, role, now, now),
                 )
-        except sqlite3.IntegrityError as exc:
+        except IntegrityError as exc:
             raise DocumentError("This employee ID or email already exists.", 409) from exc
         return self.get(int(cursor.lastrowid))
 
@@ -194,7 +193,7 @@ class EmployeeService:
                     f"{password_sql}, updated_at = ? WHERE id = ?",
                     fields,
                 )
-        except sqlite3.IntegrityError as exc:
+        except IntegrityError as exc:
             raise DocumentError("This employee ID or email already exists.", 409) from exc
         if not cursor.rowcount:
             raise DocumentError("Employee not found.", 404)

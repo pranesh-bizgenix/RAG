@@ -58,6 +58,8 @@ class Settings:
     csrf_token: str = ""
     initial_admin_email: str = ""
     initial_admin_password: str = ""
+    turso_database_url: str = ""
+    turso_auth_token: str = ""
     inline_ingestion: bool = False
 
     @property
@@ -97,5 +99,7 @@ class Settings:
             csrf_token=os.getenv("CSRF_TOKEN", "").strip(),
             initial_admin_email=os.getenv("INITIAL_ADMIN_EMAIL", "").strip().lower(),
             initial_admin_password=os.getenv("INITIAL_ADMIN_PASSWORD", ""),
+            turso_database_url=os.getenv("TURSO_DATABASE_URL", "").strip(),
+            turso_auth_token=os.getenv("TURSO_AUTH_TOKEN", "").strip(),
         )
         return replace(settings, **overrides) if overrides else settings

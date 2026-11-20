@@ -1,4 +1,4 @@
-"""SQLite persistence with ordered schema migrations."""
+"""Local SQLite or remote Turso persistence with ordered schema migrations."""
 
 from __future__ import annotations
 
@@ -6,7 +6,23 @@ import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Iterator
+from typing import Any, Iterator
+
+try:
+    import turso_serverless
+except ImportError:  # Local-only installs can still use the built-in SQLite driver.
+    turso_serverless = None
+
+IntegrityError = (
+    (sqlite3.IntegrityError, turso_serverless.IntegrityError)
+    if turso_serverless is not None
+    else (sqlite3.IntegrityError,)
+)
+DatabaseError = (
+    (sqlite3.Error, turso_serverless.Error)
+    if turso_serverless is not None
+    else (sqlite3.Error,)
+)
 
 MIGRATIONS: list[str] = [
     """
@@ -147,17 +163,27 @@ def utc_after(hours: float) -> str:
 
 
 class Database:
-    """Opens a short-lived connection per unit of work so threads never share one."""
+    """Open short-lived local or remote connections so threads never share one."""
 
-    def __init__(self, path: Path | str) -> None:
+    def __init__(self, path: Path | str, *, turso_url: str = "", turso_auth_token: str = "") -> None:
         self.path = Path(path)
+        self.turso_url = turso_url.strip()
+        self.turso_auth_token = turso_auth_token.strip()
+        if bool(self.turso_url) != bool(self.turso_auth_token):
+            raise RuntimeError("TURSO_DATABASE_URL and TURSO_AUTH_TOKEN must be configured together.")
+        if self.turso_url and turso_serverless is None:
+            raise RuntimeError("Install turso_serverless to use TURSO_DATABASE_URL.")
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.migrate()
 
     @contextmanager
-    def connect(self) -> Iterator[sqlite3.Connection]:
-        connection = sqlite3.connect(self.path, timeout=10)
-        connection.row_factory = sqlite3.Row
+    def connect(self) -> Iterator[Any]:
+        if self.turso_url:
+            connection = turso_serverless.connect(self.turso_url, auth_token=self.turso_auth_token)
+            connection.row_factory = turso_serverless.Row
+        else:
+            connection = sqlite3.connect(self.path, timeout=10)
+            connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys = ON")
         try:
             with connection:  # commits on success, rolls back on error
@@ -172,7 +198,8 @@ class Database:
 
     def migrate(self) -> None:
         with self.connect() as connection:
-            connection.execute("PRAGMA journal_mode = WAL")
+            if not self.turso_url:
+                connection.execute("PRAGMA journal_mode = WAL")
             version = int(connection.execute("PRAGMA user_version").fetchone()[0])
             for number, script in enumerate(MIGRATIONS[version:], start=version + 1):
                 connection.executescript(f"BEGIN;\n{script}\nPRAGMA user_version = {number};\nCOMMIT;")
@@ -182,10 +209,12 @@ class Database:
             with self.connect() as connection:
                 connection.execute("SELECT 1").fetchone()
             return True
-        except sqlite3.Error:
+        except DatabaseError:
             return False
 
     def backup_to(self, target: Path) -> None:
+        if self.turso_url:
+            raise RuntimeError("Use the Turso dashboard to back up a remote database.")
         target.parent.mkdir(parents=True, exist_ok=True)
         source = sqlite3.connect(self.path)
         destination = sqlite3.connect(target)

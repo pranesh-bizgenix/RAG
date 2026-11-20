@@ -72,7 +72,11 @@ class Application:
         embedding_client: APIEmbeddingClient | None = None,
     ) -> None:
         self.settings = settings
-        self.db = Database(settings.db_path)
+        self.db = Database(
+            settings.db_path,
+            turso_url=settings.turso_database_url,
+            turso_auth_token=settings.turso_auth_token,
+        )
         self.store = LocalVectorStore(settings.store_path)
         self.embedding_client = embedding_client or APIEmbeddingClient()
         # No accounts: everyone shares one workspace. The CSRF token stops other websites from

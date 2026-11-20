@@ -178,17 +178,18 @@ Vercel Function request bodies are limited to 4.5 MB. The serverless adapter the
 one-file upload limit and performs ingestion inside the upload request instead of relying on a background thread.
 Larger uploads require a direct-to-object-storage flow, which this filesystem-backed version does not implement.
 
-Vercel Functions have instance-local temporary storage. The bundled vector index is loaded on each cold start,
-but conversations, uploads, and changes made in the admin dashboard are temporary and may differ between
-instances. Chat queries recreate a missing conversation on the handling instance so requests still complete,
-but history is not guaranteed across reloads or instances. For a durable multi-user production deployment,
-replace SQLite and the local document/vector files
-with managed database, object storage, and vector-store services (or deploy this application on an always-on
-host with a persistent disk).
+Vercel Functions have instance-local temporary files. Connect the free Turso marketplace integration so Vercel
+injects `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`; the app then stores employees, departments, sessions,
+permissions, conversations, and document metadata in shared serverless SQLite. Without those variables, the
+database also remains instance-local.
 
-In practical terms, Vercel is suitable for the read-mostly chat experience backed by the vector index committed
-with the deployment. Do not treat its Admin uploads, conversation history, or index changes as durable until
-SQLite/document/vector persistence has been moved to shared external services.
+The bundled vector index is still loaded on each cold start. Newly uploaded originals and runtime vector-index
+changes are not durable on Vercel until object storage and a shared vector store are connected. For fully durable
+uploads, add those services or deploy this application on an always-on host with a persistent disk.
+
+In practical terms, Vercel with Turso supports durable user administration, access rules, sessions, and chat
+history while using the committed vector index for retrieval. Do not treat new Admin uploads or vector-index
+changes as durable until document and vector persistence have also moved to shared external services.
 
 For an always-on deployment with persistent local storage:
 

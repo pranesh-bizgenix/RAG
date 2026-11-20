@@ -91,9 +91,18 @@ def register(router: Router, app: "Application") -> None:
             *(
                 [
                     {
-                        "name": "Persistence",
+                        "name": "Database persistence",
+                        "ok": bool(settings.turso_database_url),
+                        "detail": (
+                            "Turso stores employees, departments, sessions, permissions, and history durably"
+                            if settings.turso_database_url
+                            else "Vercel temporary database; accounts and history are not durable"
+                        ),
+                    },
+                    {
+                        "name": "File persistence",
                         "ok": False,
-                        "detail": "Vercel temporary storage; uploads and history are not durable",
+                        "detail": "Uploaded originals and runtime vector-index changes remain temporary on Vercel",
                     }
                 ]
                 if settings.inline_ingestion

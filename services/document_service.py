@@ -7,7 +7,6 @@ import json
 import logging
 import os
 import queue
-import sqlite3
 import threading
 import time
 import uuid
@@ -15,7 +14,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from core.config import Settings
-from core.database import Database, utc_now
+from core.database import Database, IntegrityError, utc_now
 from core.logging_setup import log_fields
 from parsers import load_documents
 from rag.embedder import APIEmbeddingClient, embed_texts
@@ -165,7 +164,7 @@ class DocumentService:
 
     # Database helpers.
 
-    def _row(self, document_id: str) -> sqlite3.Row | None:
+    def _row(self, document_id: str) -> Any | None:
         with self.db.connect() as connection:
             return connection.execute("SELECT * FROM documents WHERE id = ?", (document_id,)).fetchone()
 
@@ -185,7 +184,7 @@ class DocumentService:
         log = logger.error if level == "error" else logger.warning if level == "warning" else logger.info
         log(message, extra=log_fields(document=document_name_, document_id=document_id))
 
-    def _file_path(self, row: sqlite3.Row) -> Path | None:
+    def _file_path(self, row: Any) -> Path | None:
         if not row["stored_name"]:
             return None
         path = (self.documents_dir / row["stored_name"]).resolve()
@@ -366,7 +365,7 @@ class DocumentService:
                             now,
                         ),
                     )
-            except sqlite3.IntegrityError as exc:
+            except IntegrityError as exc:
                 (self.documents_dir / stored_name).unlink(missing_ok=True)
                 raise UploadError("This document was uploaded at the same time by another request.") from exc
             self._pending.add(document_id)
@@ -395,7 +394,7 @@ class DocumentService:
             finally:
                 self._queue.task_done()
 
-    def _build_chunks(self, row: sqlite3.Row) -> list[dict[str, str]]:
+    def _build_chunks(self, row: Any) -> list[dict[str, str]]:
         path = self._file_path(row)
         if path is not None and path.is_file():
             prefix = path.name
@@ -643,7 +642,7 @@ class DocumentService:
     )
 
     @staticmethod
-    def _summary(row: sqlite3.Row) -> dict[str, Any]:
+    def _summary(row: Any) -> dict[str, Any]:
         summary = {**dict(row), "has_original": bool(row["has_original"])}
         try:
             summary["allowed_employees"] = json.loads(summary["allowed_employees"] or "[]")

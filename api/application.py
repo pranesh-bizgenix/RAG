@@ -103,6 +103,15 @@ class Application:
     # Lifecycle.
 
     def start(self) -> None:
+        if bool(self.settings.initial_admin_email) != bool(self.settings.initial_admin_password):
+            raise RuntimeError("INITIAL_ADMIN_EMAIL and INITIAL_ADMIN_PASSWORD must be configured together.")
+        if self.settings.initial_admin_email and not self.auth.has_admin():
+            self.auth.setup_admin(
+                {
+                    "email": self.settings.initial_admin_email,
+                    "password": self.settings.initial_admin_password,
+                }
+            )
         self.documents.start()
 
     def stop(self) -> None:

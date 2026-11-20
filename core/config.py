@@ -56,6 +56,8 @@ class Settings:
     log_level: str = "INFO"
     log_format: str = "text"
     csrf_token: str = ""
+    initial_admin_email: str = ""
+    initial_admin_password: str = ""
     inline_ingestion: bool = False
 
     @property
@@ -93,5 +95,7 @@ class Settings:
             log_level=os.getenv("LOG_LEVEL", "INFO").strip().upper() or "INFO",
             log_format=os.getenv("LOG_FORMAT", "json" if env == "production" else "text").strip().lower(),
             csrf_token=os.getenv("CSRF_TOKEN", "").strip(),
+            initial_admin_email=os.getenv("INITIAL_ADMIN_EMAIL", "").strip().lower(),
+            initial_admin_password=os.getenv("INITIAL_ADMIN_PASSWORD", ""),
         )
         return replace(settings, **overrides) if overrides else settings

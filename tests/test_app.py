@@ -113,6 +113,25 @@ class AppTestCase(unittest.TestCase):
 
 
 class AccessTests(AppTestCase):
+    def test_initial_admin_is_provisioned_from_settings(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            settings = Settings(
+                store_path=root / "vectors.json",
+                db_path=root / "app.db",
+                documents_dir=root / "documents",
+                initial_admin_email="deployed-admin@example.test",
+                initial_admin_password="simple-password",
+            )
+            app = Application(settings, llm=None, embedding_client=APIEmbeddingClient())
+            app.start()
+            try:
+                self.assertTrue(app.auth.has_admin())
+                _, user = app.auth.login("deployed-admin@example.test", "simple-password")
+                self.assertEqual(user["role"], "admin")
+            finally:
+                app.stop()
+
     def test_configured_csrf_token_is_stable_across_instances(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

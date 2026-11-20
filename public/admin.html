@@ -35,6 +35,10 @@
             <svg viewBox="0 0 24 24" class="icon"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5" /></svg>
             Knowledge Base
           </a>
+          <a class="nav-link" href="#employees" data-view="employees">
+            <svg viewBox="0 0 24 24" class="icon"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M19 8v6M16 11h6" /></svg>
+            Employee Management
+          </a>
 
           <div class="nav-section">System</div>
           <a class="nav-link" href="#reindex" data-view="reindex">
@@ -68,6 +72,7 @@
               <svg viewBox="0 0 24 24" class="icon"><path d="M3 12a9 9 0 1 0 2.6-6.4L3 8" /><path d="M3 3v5h5" /></svg>
               Refresh
             </button>
+            <button class="btn btn-sm topbar-btn" type="button" id="admin-logout">Sign out</button>
             <button class="btn btn-sm topbar-btn square" type="button" id="theme-toggle" aria-label="Toggle dark theme" title="Toggle theme">
               <svg viewBox="0 0 24 24" class="icon"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" /></svg>
             </button>
@@ -172,6 +177,34 @@
 
             <div class="card">
               <div class="card-header">
+                <span class="card-icon green">
+                  <svg viewBox="0 0 24 24" class="icon"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM4 21a8 8 0 0 1 16 0" /><path d="M17 11.5 19 13.5l3-3" /></svg>
+                </span>
+                <h2>Document Access</h2>
+                <label class="access-toggle" for="department-access-toggle">
+                  <span class="access-toggle-label" id="department-access-label">Everyone</span>
+                  <input id="department-access-toggle" type="checkbox" role="switch" aria-describedby="document-access-description" />
+                  <span class="access-toggle-track" aria-hidden="true"><span></span></span>
+                </label>
+              </div>
+              <div class="card-body" id="document-access-body">
+                <p class="muted" id="document-access-description">Access is currently open to everyone. Turn on department-wise access to limit these documents.</p>
+                <div class="access-form-grid">
+                  <div class="field">
+                    <label for="upload-department">Department</label>
+                    <select class="input" id="upload-department"></select>
+                  </div>
+                  <div class="field">
+                    <label for="upload-employees">Employees with access <span class="optional">(optional)</span></label>
+                    <textarea class="input" id="upload-employees" rows="3" maxlength="12000" placeholder="Enter employee names separated by commas or new lines"></textarea>
+                    <span class="hint">Leave blank to allow everyone in the selected department.</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header">
                 <span class="card-icon orange">
                   <svg viewBox="0 0 24 24" class="icon"><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 2" /></svg>
                 </span>
@@ -216,6 +249,8 @@
                   <option value="processing">Processing</option>
                   <option value="failed">Failed</option>
                 </select>
+                <label class="sr-only" for="doc-department">Filter by department</label>
+                <select class="input status-filter" id="doc-department"></select>
               </div>
               <div class="table-scroll">
                 <table class="data-table">
@@ -224,6 +259,7 @@
                       <th scope="col">Filename</th>
                       <th scope="col" class="col-type">Type</th>
                       <th scope="col">Status</th>
+                      <th scope="col">Department</th>
                       <th scope="col" class="num">Chunks</th>
                       <th scope="col" class="num">Size</th>
                       <th scope="col">Uploaded</th>
@@ -234,6 +270,52 @@
                 </table>
               </div>
               <div class="empty-state" id="documents-empty" hidden></div>
+            </div>
+          </section>
+
+          <!-- Employee management -->
+          <section class="view" data-view="employees" hidden>
+            <div class="page-head page-head-actions">
+              <div><h1>Employee Management</h1><p>Create employee credentials, control account status, and organize access by department.</p></div>
+              <button class="btn btn-primary" type="button" id="add-employee">Add employee</button>
+            </div>
+
+            <div class="employee-summary" id="employee-summary"></div>
+
+            <div class="card">
+              <div class="card-header">
+                <span class="card-icon green"><svg viewBox="0 0 24 24" class="icon"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M19 8v6M16 11h6" /></svg></span>
+                <h2>Employees</h2>
+              </div>
+              <div class="toolbar">
+                <label class="sr-only" for="employee-search">Search employees</label>
+                <input class="input search" id="employee-search" type="search" placeholder="Search name or employee ID…" />
+                <label class="sr-only" for="employee-status">Filter by status</label>
+                <select class="input status-filter" id="employee-status"><option value="">All statuses</option><option value="active">Active</option><option value="suspended">Suspended</option></select>
+                <label class="sr-only" for="employee-department-filter">Filter by department</label>
+                <select class="input status-filter" id="employee-department-filter"></select>
+              </div>
+              <div class="table-scroll">
+                <table class="data-table">
+                  <thead><tr><th>Employee</th><th>Employee ID</th><th>Email</th><th>Department</th><th>Role</th><th>Status</th><th>Created</th><th><span class="sr-only">Actions</span></th></tr></thead>
+                  <tbody id="employees-body"></tbody>
+                </table>
+              </div>
+              <div class="empty-state" id="employees-empty" hidden><strong>No employees found</strong><span>Create an employee or change the filters.</span></div>
+            </div>
+
+            <div class="card">
+              <div class="card-header">
+                <span class="card-icon orange"><svg viewBox="0 0 24 24" class="icon"><path d="M4 20V9l8-5 8 5v11M8 20v-6h8v6M9 10h.01M15 10h.01" /></svg></span>
+                <h2>Departments</h2>
+              </div>
+              <div class="card-body">
+                <form class="department-create" id="department-form">
+                  <div class="field"><label for="department-name">New department</label><input class="input" id="department-name" maxlength="80" placeholder="For example: Customer Success" required /></div>
+                  <button class="btn btn-primary" type="submit">Add department</button>
+                </form>
+                <div class="department-list" id="department-list"></div>
+              </div>
             </div>
           </section>
 
@@ -293,7 +375,46 @@
           <section class="view" data-view="settings" hidden>
             <div class="page-head">
               <h1>Settings</h1>
-              <p>Current retrieval, embedding and upload configuration (set via environment variables).</p>
+              <p>Choose the language model that answers questions and review the current retrieval configuration.</p>
+            </div>
+            <div class="card">
+              <div class="card-header">
+                <span class="card-icon green">
+                  <svg viewBox="0 0 24 24" class="icon"><path d="M12 3a6 6 0 0 0-6 6v2a4 4 0 0 0-2 3.5V17a2 2 0 0 0 2 2h2v-7H6V9a6 6 0 0 1 12 0v3h-2v7h2a2 2 0 0 0 2-2v-2.5A4 4 0 0 0 18 11V9a6 6 0 0 0-6-6Z" /></svg>
+                </span>
+                <h2>Language model</h2>
+                <span class="pill" id="llm-status">Loading…</span>
+              </div>
+              <form class="card-body llm-form" id="llm-form">
+                <p class="muted">Select a provider and model, then add its API key. Saving switches new chat answers to that model immediately.</p>
+                <div class="llm-form-grid">
+                  <div class="field">
+                    <label for="llm-service">Provider</label>
+                    <select class="input" id="llm-service" required></select>
+                  </div>
+                  <div class="field">
+                    <label for="llm-model">Model</label>
+                    <select class="input" id="llm-model" required></select>
+                  </div>
+                  <div class="field llm-custom-model" id="llm-custom-model-field" hidden>
+                    <label for="llm-custom-model">Custom model ID</label>
+                    <input class="input" id="llm-custom-model" type="text" maxlength="160" autocomplete="off" placeholder="provider/model-name" />
+                  </div>
+                  <div class="field llm-key-field">
+                    <label for="llm-api-key">API key</label>
+                    <input class="input" id="llm-api-key" type="password" maxlength="4096" autocomplete="new-password" placeholder="Paste API key" />
+                    <span class="hint" id="llm-key-hint">The key is stored on this server and is never sent back to the browser.</span>
+                  </div>
+                  <div class="field" id="llm-base-url-field" hidden>
+                    <label for="llm-base-url">API base URL</label>
+                    <input class="input" id="llm-base-url" type="url" maxlength="500" placeholder="https://api.example.com/v1" />
+                  </div>
+                </div>
+                <div class="form-actions llm-actions">
+                  <button class="btn btn-primary" type="submit" id="save-llm">Save model</button>
+                  <span class="hint" id="llm-active-model"></span>
+                </div>
+              </form>
             </div>
             <div class="card">
               <div class="card-header">
@@ -317,6 +438,21 @@
         </button>
       </div>
       <div class="modal-body" id="document-body"></div>
+    </dialog>
+
+    <dialog class="modal" id="employee-dialog" aria-labelledby="employee-dialog-title">
+      <div class="modal-header"><h2 id="employee-dialog-title">Add employee</h2><button class="icon-btn" type="button" data-close aria-label="Close"><svg viewBox="0 0 24 24" class="icon"><path d="M6 6l12 12M18 6 6 18" /></svg></button></div>
+      <form class="modal-body" id="employee-form">
+        <input type="hidden" id="employee-record-id" />
+        <div class="field"><label for="employee-name">Employee name</label><input class="input" id="employee-name" maxlength="120" autocomplete="name" required /></div>
+        <div class="field"><label for="employee-email">Employee email</label><input class="input" id="employee-email" type="email" maxlength="254" autocomplete="email" placeholder="employee@company.com" required /></div>
+        <div class="field"><label for="employee-id">Employee ID</label><input class="input" id="employee-id" maxlength="64" autocomplete="username" placeholder="e.g. EMP-1024" required /></div>
+        <div class="field"><label for="employee-department">Department</label><select class="input" id="employee-department" required></select></div>
+        <div class="field"><label for="employee-role">Role</label><select class="input" id="employee-role"><option value="employee">Employee</option><option value="admin">Administrator</option></select></div>
+        <div class="field"><label for="employee-password">Password <span class="optional" id="password-optional"></span></label><input class="input" id="employee-password" type="password" maxlength="256" autocomplete="new-password" /></div>
+        <div class="field" id="employee-status-field" hidden><label for="employee-edit-status">Status</label><select class="input" id="employee-edit-status"><option value="active">Active</option><option value="suspended">Suspended</option></select></div>
+        <div class="modal-actions"><button class="btn" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit" id="save-employee">Create employee</button></div>
+      </form>
     </dialog>
 
     <dialog class="viewer" id="viewer-dialog" aria-labelledby="viewer-title">

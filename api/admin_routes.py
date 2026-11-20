@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import json
 import shutil
 import time
 from email import policy
@@ -12,6 +14,13 @@ from typing import TYPE_CHECKING
 from urllib.parse import quote
 
 from api.http import HTTPError, Request, Response, Router
+from core.llm_configuration import (
+    load_configuration,
+    public_catalog,
+    save_configuration,
+    validate_configuration,
+)
+from rag.llm import create_llm_client
 from services.document_preview import office_preview
 from services.document_service import UNDO_SECONDS
 
@@ -21,7 +30,7 @@ if TYPE_CHECKING:
     from api.application import Application
 
 
-def _multipart_files(request: Request, limit: int) -> list[tuple[str, bytes]]:
+def _multipart_upload(request: Request, limit: int) -> tuple[list[tuple[str, bytes]], dict[str, str]]:
     content_type = request.header("Content-Type")
     if not content_type.lower().startswith("multipart/form-data"):
         raise HTTPError(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, "Upload must use multipart/form-data.")
@@ -29,11 +38,17 @@ def _multipart_files(request: Request, limit: int) -> list[tuple[str, bytes]]:
     message = BytesParser(policy=policy.default).parsebytes(envelope)
     if not message.is_multipart():
         raise HTTPError(HTTPStatus.BAD_REQUEST, "Malformed upload.")
-    return [
+    files = [
         (part.get_filename() or "", part.get_payload(decode=True) or b"")
         for part in message.iter_parts()
         if part.get_param("name", header="content-disposition") in {"files", "file"} and part.get_filename()
     ]
+    fields = {
+        str(part.get_param("name", header="content-disposition")): str(part.get_content()).strip()
+        for part in message.iter_parts()
+        if not part.get_filename() and part.get_param("name", header="content-disposition")
+    }
+    return files, fields
 
 
 def register(router: Router, app: "Application") -> None:
@@ -53,7 +68,7 @@ def register(router: Router, app: "Application") -> None:
 
     @router.add("GET", "/api/admin/bootstrap")
     def bootstrap(request: Request) -> dict:
-        return {"csrf_token": app.csrf_token, **overview_payload(request)}
+        return {"csrf_token": app.csrf_token, "user": request.user, **overview_payload(request)}
 
     @router.add("GET", "/api/admin/health")
     def health(request: Request) -> dict:
@@ -110,18 +125,88 @@ def register(router: Router, app: "Application") -> None:
 
     @router.add("GET", "/api/admin/documents")
     def list_documents(request: Request) -> dict:
-        return {"documents": app.documents.list(request.query.get("q", ""), request.query.get("status", ""))}
+        return {
+            "documents": app.documents.list(
+                request.query.get("q", ""), request.query.get("status", ""), request.query.get("department", "")
+            )
+        }
+
+    @router.add("GET", "/api/admin/departments")
+    def list_departments(request: Request) -> dict:
+        return {"departments": app.employees.departments()}
+
+    @router.add("POST", "/api/admin/departments")
+    def create_department(request: Request) -> Response:
+        return Response(app.employees.create_department(str(request.json().get("name", ""))), 201)
+
+    @router.add("DELETE", "/api/admin/departments/<department_id>")
+    def delete_department(request: Request) -> dict:
+        app.employees.delete_department(request.params["department_id"])
+        return {"ok": True}
+
+    @router.add("GET", "/api/admin/employees")
+    def list_employees(request: Request) -> dict:
+        return {
+            "employees": app.employees.list(
+                request.query.get("q", ""), request.query.get("status", ""), request.query.get("department", "")
+            )
+        }
+
+    @router.add("POST", "/api/admin/employees")
+    def create_employee(request: Request) -> Response:
+        return Response(app.employees.create(request.json()), 201)
+
+    @router.add("PATCH", "/api/admin/employees/<employee>")
+    def update_employee(request: Request) -> dict:
+        employee_id = int(request.params["employee"])
+        payload = request.json()
+        current = app.employees.get(employee_id)
+        next_role = str(payload.get("role", current["role"])).strip().lower()
+        next_status = str(payload.get("status", current["status"])).strip().lower()
+        removing_admin_access = current["role"] == "admin" and (
+            next_role != "admin" or next_status != "active"
+        )
+        if request.user and employee_id == request.user["id"] and removing_admin_access:
+            raise HTTPError(HTTPStatus.CONFLICT, "You cannot suspend or remove administrator access from your own account.")
+        if removing_admin_access and app.employees.active_admin_count() <= 1:
+            raise HTTPError(HTTPStatus.CONFLICT, "At least one active administrator account is required.")
+        return app.employees.update(employee_id, payload)
+
+    @router.add("DELETE", "/api/admin/employees/<employee>")
+    def delete_employee(request: Request) -> dict:
+        employee_id = int(request.params["employee"])
+        current = app.employees.get(employee_id)
+        if request.user and employee_id == request.user["id"]:
+            raise HTTPError(HTTPStatus.CONFLICT, "You cannot delete the account you are currently using.")
+        if current["role"] == "admin" and current["status"] == "active" and app.employees.active_admin_count() <= 1:
+            raise HTTPError(HTTPStatus.CONFLICT, "At least one active administrator account is required.")
+        app.employees.delete(employee_id)
+        return {"ok": True}
 
     @router.add("POST", "/api/admin/documents")
     def upload_documents(request: Request) -> Response:
         limit = settings.max_upload_bytes * settings.max_files_per_upload + 1024 * 1024
-        files = _multipart_files(request, limit)
-        results = app.documents.upload(files, None)
+        files, fields = _multipart_upload(request, limit)
+        try:
+            employees = json.loads(fields.get("employees", "[]"))
+        except json.JSONDecodeError as exc:
+            raise HTTPError(HTTPStatus.BAD_REQUEST, "Employee access must be a valid list.") from exc
+        results = app.documents.upload(files, None, fields.get("department", "all"), employees)
         return Response({"results": results}, 202 if any(item["ok"] for item in results) else 400)
 
     @router.add("GET", "/api/admin/documents/<document_id>")
     def get_document(request: Request) -> dict:
         return app.documents.get(request.params["document_id"])
+
+    @router.add("PATCH", "/api/admin/documents/<document_id>/access")
+    def update_document_access(request: Request) -> dict:
+        payload = request.json()
+        employees = payload.get("employees", [])
+        if not isinstance(employees, list):
+            raise HTTPError(HTTPStatus.BAD_REQUEST, "Employee access must be a list of names.")
+        return app.documents.update_access(
+            request.params["document_id"], str(payload.get("department", "all")), employees
+        )
 
     @router.add("GET", "/api/admin/documents/<document_id>/file")
     def document_file(request: Request) -> Response:
@@ -191,9 +276,60 @@ def register(router: Router, app: "Application") -> None:
         llm = app.chatbot.llm
         return {
             "index": app.documents.index_info(),
+            "departments": app.employees.departments(),
             "retrieval": {"top_k": settings.top_k, "min_vector_score": settings.min_vector_score},
             "llm": {"provider": llm.provider, "model": llm.model} if llm else None,
             "limits": {"max_upload_mb": settings.max_upload_mb, "max_files_per_upload": settings.max_files_per_upload},
+        }
+
+    @router.add("GET", "/api/admin/llm")
+    def llm_configuration(request: Request) -> dict:
+        saved = load_configuration(settings.llm_config_path)
+        llm = app.chatbot.llm
+        service = (saved or {}).get("service") or getattr(llm, "service", "")
+        base_url = (saved or {}).get("base_url", "")
+        if not saved and llm:
+            base_url = os.getenv("LLM_BASE_URL", "").strip()
+        return {
+            "catalog": public_catalog(),
+            "configuration": {
+                "enabled": llm is not None,
+                "service": service,
+                "model": getattr(llm, "model", ""),
+                "base_url": base_url,
+                "has_api_key": bool(saved and saved.get("api_key")) or bool(getattr(llm, "api_key", "")),
+                "source": "admin" if saved else "environment" if llm else "none",
+            },
+        }
+
+    @router.add("PUT", "/api/admin/llm")
+    def update_llm_configuration(request: Request) -> dict:
+        try:
+            payload = request.json()
+            if not str(payload.get("api_key", "")).strip():
+                saved = load_configuration(settings.llm_config_path) or {}
+                current_service = saved.get("service") or getattr(app.chatbot.llm, "service", "")
+                if current_service == str(payload.get("service", "")).strip().lower():
+                    payload["api_key"] = saved.get("api_key") or getattr(app.chatbot.llm, "api_key", "")
+            configuration = validate_configuration(payload)
+            client = create_llm_client(configuration) if configuration else None
+            save_configuration(settings.llm_config_path, configuration)
+        except ValueError as exc:
+            raise HTTPError(HTTPStatus.BAD_REQUEST, str(exc)) from exc
+        except OSError as exc:
+            raise HTTPError(HTTPStatus.INTERNAL_SERVER_ERROR, "The LLM settings could not be saved.") from exc
+        app.chatbot.llm = client
+        app.chatbot.last_llm_error = None
+        return {
+            "ok": True,
+            "configuration": {
+                "enabled": client is not None,
+                "service": configuration.get("service", "") if configuration else "",
+                "model": getattr(client, "model", ""),
+                "base_url": configuration.get("base_url", "") if configuration else "",
+                "has_api_key": bool(configuration and configuration.get("api_key")),
+                "source": "admin" if configuration else "none",
+            },
         }
 
     @router.add("GET", "/api/admin/events")

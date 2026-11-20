@@ -608,6 +608,186 @@
   opacity: 0.7;
 }
 
+.access-form-grid {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.65fr) minmax(260px, 1.35fr);
+  gap: 2px 18px;
+}
+
+.access-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.access-toggle-label {
+  min-width: 108px;
+  color: var(--text-2);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: right;
+}
+
+.access-toggle input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.access-toggle-track {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  flex: none;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface-3);
+  transition: background 160ms ease, border-color 160ms ease;
+}
+
+.access-toggle-track span {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--text-3);
+  box-shadow: var(--shadow-sm);
+  transition: transform 160ms ease, background 160ms ease;
+}
+
+.access-toggle input:checked + .access-toggle-track {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.access-toggle input:checked + .access-toggle-track span {
+  background: #fff;
+  transform: translateX(20px);
+}
+
+.access-toggle input:focus-visible + .access-toggle-track {
+  outline: 3px solid var(--accent-soft);
+  outline-offset: 2px;
+}
+
+#document-access-body.access-disabled .access-form-grid {
+  opacity: 0.55;
+}
+
+#document-access-body .access-form-grid {
+  transition: opacity 160ms ease;
+}
+
+.access-form-grid textarea {
+  min-height: 84px;
+  resize: vertical;
+}
+
+.optional {
+  color: var(--text-3);
+  font-weight: 400;
+}
+
+.document-access-form {
+  margin-bottom: 20px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.department-pill {
+  display: block;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.page-head-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.page-head-actions h1 {
+  margin-bottom: 4px;
+}
+
+.employee-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.mini-stat {
+  display: grid;
+  gap: 3px;
+  padding: 18px 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.mini-stat strong {
+  font-size: 24px;
+}
+
+.mini-stat span {
+  color: var(--text-3);
+  font-size: 13px;
+}
+
+.employee-actions {
+  flex-wrap: nowrap;
+}
+
+.department-create {
+  display: flex;
+  align-items: end;
+  gap: 12px;
+  max-width: 680px;
+  margin-bottom: 18px;
+}
+
+.department-create .field {
+  flex: 1;
+  margin: 0;
+}
+
+.department-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 10px;
+}
+
+.department-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 58px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.department-item > span:first-child {
+  display: grid;
+  gap: 2px;
+}
+
+.department-item small {
+  color: var(--text-3);
+}
+
 .upload-panel {
   display: grid;
   gap: 12px;
@@ -838,6 +1018,49 @@
   margin: 4px 0 0;
   font-weight: 500;
   overflow-wrap: anywhere;
+}
+
+.llm-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px 18px;
+}
+
+.llm-key-field {
+  grid-column: 1 / -1;
+}
+
+.llm-actions {
+  align-items: center;
+  margin-top: 4px;
+}
+
+.llm-actions .hint {
+  flex: 1;
+}
+
+@media (max-width: 640px) {
+  .page-head-actions,
+  .department-create {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .employee-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .access-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .llm-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .llm-key-field {
+    grid-column: auto;
+  }
 }
 
 .detail-grid {

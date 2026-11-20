@@ -20,11 +20,11 @@ MAX_MESSAGE_CHARS = 4000
 UNAVAILABLE = "The assistant is temporarily unavailable. Please try again in a moment."
 
 
-def _suggestions(app: "Application") -> dict:
+def _suggestions(app: "Application", user: dict | None) -> dict:
     """Build the welcome prompts once for both bootstrap and the legacy endpoint."""
     names = [
         " ".join(Path(name).stem.replace("_", " ").replace("-", " ").split())
-        for name in app.documents.document_names(3)
+        for name in app.documents.document_names(3, user)
     ]
     prompts: list[dict[str, str]] = []
     if names:
@@ -52,20 +52,21 @@ def register(router: Router, app: "Application") -> None:
 
     @router.add("GET", "/api/session")
     def session(request: Request) -> dict:
-        return {"csrf_token": app.csrf_token}
+        return {"csrf_token": app.csrf_token, "user": request.user}
 
     @router.add("GET", "/api/bootstrap")
     def bootstrap(request: Request) -> dict:
         """Load all initial chat state in one instance-consistent request."""
         return {
             "csrf_token": app.csrf_token,
+            "user": request.user,
             "conversations": app.conversations.list(app.workspace_id),
-            **_suggestions(app),
+            **_suggestions(app, request.user),
         }
 
     @router.add("GET", "/api/suggestions")
     def suggestions(request: Request) -> dict:
-        return _suggestions(app)
+        return _suggestions(app, request.user)
 
     @router.add("GET", "/api/conversations")
     def list_conversations(request: Request) -> dict:
@@ -118,7 +119,8 @@ def register(router: Router, app: "Application") -> None:
             status = "complete"
             try:
                 stream.send("start", {"user_message_id": user_message_id, "conversation": {"id": conversation_id, "title": title}})
-                with closing(app.chatbot.stream_answer(query, history)) as events:
+                allowed_documents = app.documents.accessible_document_ids(request.user)
+                with closing(app.chatbot.stream_answer(query, history, allowed_documents)) as events:
                     for event in events:
                         if event["type"] == "sources":
                             sources = event["sources"]

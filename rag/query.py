@@ -68,17 +68,35 @@ class RAGChatbot:
         # Most recent generation failure, surfaced on the admin dashboard: (UTC ISO time, message).
         self.last_llm_error: tuple[str, str] | None = None
 
-    def _retrieve_context(self, query: str) -> list[dict[str, Any]]:
+    def _retrieve_context(self, query: str, allowed_document_ids: set[str] | None = None) -> list[dict[str, Any]]:
+        if allowed_document_ids is not None and not allowed_document_ids:
+            return []
+        search_limit = len(self.store.chunks) if allowed_document_ids is not None else self.top_k
+
+        def permitted(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+            if allowed_document_ids is None:
+                return items
+            return [item for item in items if str(item.get("document_id")) in allowed_document_ids]
+
         if self.store.embedding_backend in {"api", "openai"} and self.embedding_client.is_configured:
-            results = self.store.search_by_vector(self.embedding_client.embed_texts([query])[0], self.top_k)
+            results = permitted(self.store.search_by_vector(self.embedding_client.embed_texts([query])[0], search_limit))
             # Weak matches come from unrelated documents; answering from them invites hallucination.
-            return [item for item in results if item["score"] >= self.min_vector_score]
+            return [item for item in results if item["score"] >= self.min_vector_score][: self.top_k]
         # Hash vectors only overlap when tokens overlap, so no lexical match means no evidence.
-        lexical = self.store.search_lexical(query, self.top_k)
+        unfiltered_lexical = self.store.search_lexical(query, search_limit)
+        lexical = permitted(unfiltered_lexical)
         if lexical and lexical[0]["score"] > 0:
             threshold = lexical[0]["score"] * 0.7
             return [item for item in lexical if item["score"] >= threshold][: self.top_k]
-        chunks = self.store.chunks
+        # The query matched documents, but every match was outside this employee's access scope.
+        # Do not replace those blocked matches with an unrelated small-index passage.
+        if allowed_document_ids is not None and unfiltered_lexical and unfiltered_lexical[0]["score"] > 0:
+            return []
+        chunks = [
+            item
+            for item in self.store.chunks
+            if allowed_document_ids is None or str(item.get("document_id")) in allowed_document_ids
+        ]
         if 0 < len(chunks) <= SMALL_INDEX_CHUNKS:
             return [
                 {"document_id": item.get("document_id"), "source": item["source"], "text": item["text"], "score": 0.0}
@@ -86,8 +104,8 @@ class RAGChatbot:
             ]
         return []
 
-    def retrieve(self, query: str) -> list[dict[str, Any]]:
-        return self._retrieve_context(query.strip()) if query.strip() else []
+    def retrieve(self, query: str, allowed_document_ids: set[str] | None = None) -> list[dict[str, Any]]:
+        return self._retrieve_context(query.strip(), allowed_document_ids) if query.strip() else []
 
     @staticmethod
     def _citations(context: list[dict[str, Any]]) -> list[str]:
@@ -146,10 +164,15 @@ class RAGChatbot:
             message = text
         return " ".join(message.split())[:300]
 
-    def stream_answer(self, query: str, history: list[dict[str, str]] | None = None) -> Iterator[dict[str, Any]]:
+    def stream_answer(
+        self,
+        query: str,
+        history: list[dict[str, str]] | None = None,
+        allowed_document_ids: set[str] | None = None,
+    ) -> Iterator[dict[str, Any]]:
         """Yield ``{"type": "sources", ...}`` once, then ``{"type": "delta", "text": ...}`` events."""
         query = query.strip()
-        context = self.retrieve(query)
+        context = self.retrieve(query, allowed_document_ids)
         yield {"type": "sources", "sources": self.sources(context)}
         if self.llm is None:
             yield {"type": "delta", "text": self._retrieval_only_answer(context)}

@@ -81,6 +81,60 @@ MIGRATIONS: list[str] = [
     CREATE INDEX idx_events_created ON ingestion_events(created_at DESC);
     CREATE INDEX idx_events_document ON ingestion_events(document_id);
     """,
+    """
+    ALTER TABLE documents ADD COLUMN department TEXT NOT NULL DEFAULT 'all';
+    ALTER TABLE documents ADD COLUMN allowed_employees TEXT NOT NULL DEFAULT '[]';
+    CREATE INDEX idx_documents_department ON documents(department);
+    """,
+    """
+    CREATE TABLE departments (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        is_system INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL
+    );
+
+    INSERT INTO departments (id, name, is_system, created_at) VALUES
+        ('hr', 'Human Resources', 1, CURRENT_TIMESTAMP),
+        ('finance', 'Finance', 1, CURRENT_TIMESTAMP),
+        ('it', 'Information Technology', 1, CURRENT_TIMESTAMP),
+        ('operations', 'Operations', 1, CURRENT_TIMESTAMP),
+        ('sales', 'Sales', 1, CURRENT_TIMESTAMP),
+        ('marketing', 'Marketing', 1, CURRENT_TIMESTAMP),
+        ('legal', 'Legal', 1, CURRENT_TIMESTAMP),
+        ('executive', 'Executive', 1, CURRENT_TIMESTAMP),
+        ('other', 'Other', 1, CURRENT_TIMESTAMP);
+
+    CREATE TABLE employees (
+        id INTEGER PRIMARY KEY,
+        employee_id TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        name TEXT NOT NULL,
+        password_hash TEXT NOT NULL,
+        department_id TEXT NOT NULL REFERENCES departments(id) ON DELETE RESTRICT,
+        status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'suspended')),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    CREATE INDEX idx_employees_department ON employees(department_id);
+    CREATE INDEX idx_employees_status ON employees(status);
+    """,
+    """
+    ALTER TABLE employees ADD COLUMN email TEXT COLLATE NOCASE;
+    CREATE UNIQUE INDEX idx_employees_email ON employees(email) WHERE email IS NOT NULL;
+    """,
+    """
+    ALTER TABLE employees ADD COLUMN role TEXT NOT NULL DEFAULT 'employee'
+        CHECK (role IN ('employee', 'admin'));
+
+    CREATE TABLE auth_sessions (
+        token_hash TEXT PRIMARY KEY,
+        employee INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL
+    );
+    CREATE INDEX idx_auth_sessions_employee ON auth_sessions(employee);
+    CREATE INDEX idx_auth_sessions_expiry ON auth_sessions(expires_at);
+    """,
 ]
 
 

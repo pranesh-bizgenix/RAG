@@ -21,6 +21,14 @@ const stopBtn = $("stop");
 const listEl = $("conversation-list");
 const mobile = window.matchMedia("(max-width: 900px)");
 
+function revealAdminNavigation() {
+  if (document.body.dataset.userRole === "admin") {
+    document.querySelectorAll(".admin-only").forEach((item) => (item.hidden = false));
+  }
+}
+
+revealAdminNavigation();
+
 const MARK_SVG = '<img src="/static/img/bizgenix-symbol.png" alt="" width="28" height="28" />';
 const ICONS = {
   copy: '<svg viewBox="0 0 24 24" class="icon"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>',
@@ -490,6 +498,10 @@ async function streamAnswer(url, body, view, onRequestError) {
       body: body ? JSON.stringify(body) : undefined,
       signal: controller.signal,
     });
+    if (response.status === 401) {
+      location.replace("/login");
+      return;
+    }
     if (!response.ok) {
       let message = "Something went wrong. Please try again.";
       try {
@@ -660,6 +672,12 @@ function renderSuggestions(data) {
 async function init() {
   const bootstrap = await api("/api/bootstrap");
   session.csrf = bootstrap.csrf_token || "";
+  const rolePill = $("user-role-pill");
+  const accessLabel = bootstrap.user?.role === "admin" ? "Administrator" : bootstrap.user?.department_name || "Employee";
+  rolePill.textContent = accessLabel;
+  rolePill.title = `${bootstrap.user?.name || "Signed-in user"} · ${accessLabel}`;
+  rolePill.hidden = false;
+  if (bootstrap.user?.role === "admin") revealAdminNavigation();
   state.conversations = bootstrap.conversations;
   renderConversationList();
   renderSuggestions(bootstrap);
@@ -668,5 +686,13 @@ async function init() {
   if (/^[0-9a-f]{32}$/.test(id)) await openConversation(id);
   else prompt.focus();
 }
+
+$("logout").addEventListener("click", async () => {
+  try {
+    await api("/api/auth/logout", { method: "POST" });
+  } finally {
+    location.replace("/login");
+  }
+});
 
 init().catch((error) => toast(error.message || "Failed to load the app.", "error"));

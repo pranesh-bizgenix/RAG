@@ -97,6 +97,14 @@ All settings live in `.env`; see `.env.example` for the full, commented list. Th
 | `TRUST_PROXY` | Read client IP/host from a reverse proxy you control |
 | `CSRF_TOKEN` | Shared random token required when requests can reach multiple app instances |
 
+The language model can also be configured at runtime from **Admin → Settings → Language model**. Choose a
+provider/model, paste its API key, and save; new chat requests switch immediately without restarting the server.
+Admin-saved settings override the `LLM_*` environment variables and are kept in the ignored
+`storage/llm_config.json` file (with owner-only permissions where the host supports them). The API never sends the
+saved key back to the browser. Because the dashboard has no login, only expose it to people who may manage that credential.
+On Vercel this runtime file is temporary and instance-local, so use Vercel environment variables for durable
+production configuration.
+
 Any OpenAI-compatible API works for generation, including OpenAI, Groq, OpenRouter, Together, Ollama, and LM Studio:
 
 ```dotenv
@@ -139,6 +147,7 @@ the `X-CSRF-Token` header returned by `GET /api/session`.
 | `POST /api/conversations/{id}/messages` | `{content}` → SSE: `start`, `sources`, `delta`…, `done` or `error` |
 | `POST /api/conversations/{id}/regenerate` | Re-answer the last question (SSE) |
 | `GET /api/admin/overview`, `/api/admin/health` | Dashboard metrics and service checks |
+| `GET/PUT /api/admin/llm` | Read provider catalog/status / save and activate an LLM configuration |
 | `GET/POST /api/admin/documents` | List (`?q=&status=`) / upload (multipart field `files`) |
 | `GET/DELETE /api/admin/documents/{id}` | Details with logs and chunk preview / delete |
 | `POST /api/admin/documents/{id}/reindex`, `POST /api/admin/reindex` | Reindex one / all |

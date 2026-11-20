@@ -48,6 +48,7 @@ class Request:
     query: dict[str, str]
     params: dict[str, str]
     client_ip: str
+    user: dict[str, Any] | None = None
     _body: bytes | None = field(default=None, repr=False)
 
     def header(self, name: str, default: str = "") -> str:

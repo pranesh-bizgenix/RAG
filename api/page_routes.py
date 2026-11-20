@@ -33,7 +33,10 @@ def _redirect(location: str) -> Response:
 def register(router: Router, app: "Application") -> None:
     @router.add("GET", "/")
     def chat_page(request: Request) -> Response:
-        return _page("index.html")
+        html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+        role = request.user["role"] if request.user else ""
+        html = html.replace("<body>", f'<body data-user-role="{role}">', 1)
+        return Response(body=html.encode("utf-8"), content_type="text/html; charset=utf-8")
 
     @router.add("GET", "/admin")
     def admin_page(request: Request) -> Response:
@@ -41,8 +44,9 @@ def register(router: Router, app: "Application") -> None:
 
     @router.add("GET", "/login")
     def login_page(request: Request) -> Response:
-        # Old bookmarks: there is no sign-in any more.
-        return _redirect("/")
+        if request.user:
+            return _redirect("/admin" if request.user["role"] == "admin" else "/")
+        return _page("login.html")
 
     @router.add("GET", r"/static/(?P<asset>[A-Za-z0-9_\-./]+)", raw=True)
     def static_asset(request: Request) -> Response:

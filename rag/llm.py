@@ -133,7 +133,10 @@ class GeminiClient(LLMClient):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         # Gemini 3 models think before answering by default, which can add minutes per reply.
-        self.thinking_level = os.getenv("LLM_THINKING_LEVEL", "").strip().lower()
+        configured_thinking = os.getenv("LLM_THINKING_LEVEL", "").strip().lower()
+        # Gemini 3 enables extended thinking by default. For an interactive RAG chat,
+        # low thinking gives much faster first-token latency while keeping grounding.
+        self.thinking_level = configured_thinking or ("low" if self.model.startswith("gemini-3") else "")
 
     def _payload(self, messages: list[Message]) -> dict[str, object]:
         system = "\n\n".join(item["content"] for item in messages if item["role"] == "system")
@@ -245,8 +248,10 @@ def register_provider(name: str, factory: ProviderFactory) -> None:
     PROVIDERS[name.strip().lower()] = factory
 
 
-def create_llm_client() -> LLMClient | None:
-    provider = os.getenv("LLM_PROVIDER", "none").strip().lower()
+def create_llm_client(configuration: dict[str, str] | None = None) -> LLMClient | None:
+    """Build a client from a saved admin configuration or, as a fallback, the environment."""
+    configuration = configuration or {}
+    provider = configuration.get("provider", os.getenv("LLM_PROVIDER", "none")).strip().lower()
     if provider in {"", "none", "disabled"}:
         return None
     try:
@@ -254,17 +259,19 @@ def create_llm_client() -> LLMClient | None:
     except KeyError as exc:
         raise ValueError(f"Unknown LLM_PROVIDER '{provider}'. Available: {', '.join(sorted(PROVIDERS))}") from exc
 
-    api_key = os.getenv("LLM_API_KEY", "").strip()
-    model = os.getenv("LLM_MODEL", "").strip()
+    api_key = configuration.get("api_key", os.getenv("LLM_API_KEY", "")).strip()
+    model = configuration.get("model", os.getenv("LLM_MODEL", "")).strip()
     timeout = int(os.getenv("LLM_TIMEOUT_SECONDS", "60"))
     defaults = {
         "openai-compatible": "https://api.openai.com/v1",
         "anthropic": "https://api.anthropic.com/v1",
         "gemini": "https://generativelanguage.googleapis.com/v1beta",
     }
-    base_url = os.getenv("LLM_BASE_URL", "").strip() or defaults.get(provider, "")
+    base_url = configuration.get("base_url", os.getenv("LLM_BASE_URL", "")).strip() or defaults.get(provider, "")
     if not model:
         raise RuntimeError("LLM_MODEL must be configured when LLM_PROVIDER is enabled.")
     if provider in {"anthropic", "gemini"} and not api_key:
         raise RuntimeError(f"LLM_API_KEY is required for provider '{provider}'.")
-    return factory(api_key, model, base_url, timeout)
+    client = factory(api_key, model, base_url, timeout)
+    client.service = configuration.get("service", provider)
+    return client

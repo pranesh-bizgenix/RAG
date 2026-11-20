@@ -58,6 +58,14 @@ class AppTestCase(unittest.TestCase):
         self.env.start()
         self.llm = StubLLM()
         self.app = Application(self.settings, llm=self.llm, embedding_client=APIEmbeddingClient())
+        self.app.auth.setup_admin(
+            {
+                "employee_id": "ADMIN-TEST",
+                "name": "Test Administrator",
+                "email": "admin@example.test",
+                "password": "test-admin-password",
+            }
+        )
         self.app.start()
         self.server = self.app.make_server("127.0.0.1", 0)
         self.base = f"http://127.0.0.1:{self.server.server_address[1]}"
@@ -75,6 +83,11 @@ class AppTestCase(unittest.TestCase):
 
     def client(self) -> requests.Session:
         session = requests.Session()
+        login = session.post(
+            f"{self.base}/api/auth/login",
+            json={"email": "admin@example.test", "password": "test-admin-password"},
+        )
+        self.assertEqual(login.status_code, 200, login.text)
         session.headers["X-CSRF-Token"] = session.get(f"{self.base}/api/session").json()["csrf_token"]
         return session
 
@@ -114,22 +127,95 @@ class AccessTests(AppTestCase):
             self.assertEqual(first.csrf_token, "shared-serverless-token")
             self.assertEqual(first.csrf_token, second.csrf_token)
 
-    def test_everything_is_available_without_signing_in(self) -> None:
-        self.assertEqual(requests.get(f"{self.base}/").status_code, 200)
-        self.assertEqual(requests.get(f"{self.base}/admin").status_code, 200)
-        self.assertEqual(requests.get(f"{self.base}/api/conversations").status_code, 200)
-        self.assertEqual(requests.get(f"{self.base}/api/admin/overview").status_code, 200)
+    def test_sign_in_is_required_and_admin_can_access_everything(self) -> None:
+        self.assertEqual(requests.get(f"{self.base}/", allow_redirects=False).status_code, 302)
+        self.assertEqual(requests.get(f"{self.base}/admin", allow_redirects=False).status_code, 302)
+        self.assertEqual(requests.get(f"{self.base}/api/conversations").status_code, 401)
+        self.assertEqual(requests.get(f"{self.base}/api/admin/overview").status_code, 401)
         login = requests.get(f"{self.base}/login", allow_redirects=False)
-        self.assertEqual((login.status_code, login.headers["Location"]), (302, "/"))
+        self.assertEqual(login.status_code, 200)
+        admin = self.client()
+        self.assertEqual(admin.get(f"{self.base}/").status_code, 200)
+        self.assertIn('data-user-role="admin"', admin.get(f"{self.base}/").text)
+        self.assertEqual(admin.get(f"{self.base}/admin").status_code, 200)
+        self.assertEqual(admin.get(f"{self.base}/api/admin/overview").status_code, 200)
+        current_id = admin.get(f"{self.base}/api/admin/bootstrap").json()["user"]["id"]
+        self.assertEqual(admin.delete(f"{self.base}/api/admin/employees/{current_id}").status_code, 409)
 
     def test_bootstrap_endpoints_return_initial_state_and_csrf(self) -> None:
-        chat = requests.get(f"{self.base}/api/bootstrap")
+        chat = self.client().get(f"{self.base}/api/bootstrap")
         self.assertEqual(chat.status_code, 200)
         self.assertEqual(chat.json()["csrf_token"], self.app.csrf_token)
         self.assertEqual(chat.json()["conversations"], [])
         self.assertIn("suggestions", chat.json())
+        self.assertEqual(chat.json()["user"]["role"], "admin")
 
-        admin = requests.get(f"{self.base}/api/admin/bootstrap")
+    def test_employee_can_use_chat_but_cannot_access_admin(self) -> None:
+        admin = self.client()
+        created = admin.post(
+            f"{self.base}/api/admin/employees",
+            json={
+                "employee_id": "EMP-2001",
+                "name": "Normal Employee",
+                "email": "employee@example.test",
+                "password": "employee-password",
+                "department_id": "hr",
+                "role": "employee",
+            },
+        )
+        self.assertEqual(created.status_code, 201, created.text)
+        employee = requests.Session()
+        login = employee.post(
+            f"{self.base}/api/auth/login",
+            json={"email": "employee@example.test", "password": "employee-password"},
+        )
+        self.assertEqual(login.status_code, 200, login.text)
+        self.assertEqual(login.json()["user"]["role"], "employee")
+        self.assertEqual(employee.get(f"{self.base}/").status_code, 200)
+        self.assertIn('data-user-role="employee"', employee.get(f"{self.base}/").text)
+        admin_page = employee.get(f"{self.base}/admin", allow_redirects=False)
+        self.assertEqual((admin_page.status_code, admin_page.headers["Location"]), (302, "/"))
+        self.assertEqual(employee.get(f"{self.base}/api/admin/overview").status_code, 403)
+        bootstrap = employee.get(f"{self.base}/api/bootstrap").json()
+        self.assertEqual(bootstrap["user"]["role"], "employee")
+
+    def test_admin_can_save_and_activate_an_llm_without_exposing_its_key(self) -> None:
+        session = self.client()
+        response = session.put(
+            f"{self.base}/api/admin/llm",
+            json={
+                "service": "groq",
+                "model": "openai/gpt-oss-120b",
+                "api_key": "super-secret-key",
+                "base_url": "https://api.groq.com/openai/v1",
+            },
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(self.app.chatbot.llm.model, "openai/gpt-oss-120b")
+        self.assertEqual(getattr(self.app.chatbot.llm, "service"), "groq")
+        self.assertIn("super-secret-key", self.settings.llm_config_path.read_text(encoding="utf-8"))
+
+        configuration = session.get(f"{self.base}/api/admin/llm")
+        self.assertEqual(configuration.status_code, 200)
+        self.assertTrue(configuration.json()["configuration"]["has_api_key"])
+        self.assertNotIn("super-secret-key", configuration.text)
+
+    def test_admin_can_change_model_without_resending_saved_key(self) -> None:
+        session = self.client()
+        first = {
+            "service": "gemini",
+            "model": "gemini-3.8-flash",
+            "api_key": "saved-key",
+            "base_url": "https://generativelanguage.googleapis.com/v1beta",
+        }
+        self.assertEqual(session.put(f"{self.base}/api/admin/llm", json=first).status_code, 200)
+        first.update({"model": "gemini-3.5-flash-lite", "api_key": ""})
+        response = session.put(f"{self.base}/api/admin/llm", json=first)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(self.app.chatbot.llm.model, "gemini-3.5-flash-lite")
+        self.assertEqual(self.app.chatbot.llm.api_key, "saved-key")
+
+        admin = self.client().get(f"{self.base}/api/admin/bootstrap")
         self.assertEqual(admin.status_code, 200)
         self.assertEqual(admin.json()["csrf_token"], self.app.csrf_token)
         self.assertEqual(admin.json()["file_types"], 0)
@@ -172,7 +258,7 @@ class AccessTests(AppTestCase):
     def test_pages_and_static_files_are_contained(self) -> None:
         import http.client
 
-        page = requests.get(f"{self.base}/")
+        page = self.client().get(f"{self.base}/")
         self.assertIn("default-src 'self'", page.headers["Content-Security-Policy"])
         self.assertEqual(page.headers["X-Frame-Options"], "DENY")
         self.assertEqual(requests.get(f"{self.base}/static/js/chat.js").status_code, 200)
@@ -186,6 +272,124 @@ class AccessTests(AppTestCase):
             connection.close()
 
 class DocumentAndChatTests(AppTestCase):
+    def test_employee_cards_and_retrieval_are_limited_to_their_department(self) -> None:
+        admin = self.client()
+        created = admin.post(
+            f"{self.base}/api/admin/employees",
+            json={
+                "employee_id": "EXEC-100",
+                "name": "Executive User",
+                "email": "executive.user@example.test",
+                "password": "executive-password",
+                "department_id": "executive",
+                "role": "employee",
+            },
+        )
+        self.assertEqual(created.status_code, 201, created.text)
+        uploads = [
+            ("finance_private.txt", b"The finance-only treasury code is FINANCE-8842.", "finance"),
+            ("executive_brief.txt", b"The executive strategy marker is EXEC-7719.", "executive"),
+        ]
+        for filename, content, department in uploads:
+            response = admin.post(
+                f"{self.base}/api/admin/documents",
+                files=[("files", (filename, content))],
+                data={"department": department, "employees": "[]"},
+            )
+            self.assertEqual(response.status_code, 202, response.text)
+        self.assertTrue(self.app.documents.wait_idle(10))
+
+        employee = requests.Session()
+        login = employee.post(
+            f"{self.base}/api/auth/login",
+            json={"email": "executive.user@example.test", "password": "executive-password"},
+        )
+        self.assertEqual(login.status_code, 200, login.text)
+        employee.headers["X-CSRF-Token"] = employee.get(f"{self.base}/api/session").json()["csrf_token"]
+
+        cards = json.dumps(employee.get(f"{self.base}/api/suggestions").json())
+        self.assertIn("executive brief", cards.lower())
+        self.assertNotIn("finance private", cards.lower())
+
+        _, finance_events = self.ask(employee, "What is the treasury code FINANCE-8842?")
+        self.assertEqual(dict(finance_events)["sources"]["sources"], [])
+        _, executive_events = self.ask(employee, "What is the strategy marker EXEC-7719?")
+        sources = dict(executive_events)["sources"]["sources"]
+        self.assertEqual([source["document"] for source in sources], ["executive_brief.txt"])
+
+    def test_employee_and_custom_department_management(self) -> None:
+        admin = self.client()
+        departments = admin.get(f"{self.base}/api/admin/departments").json()["departments"]
+        self.assertIn("hr", {item["id"] for item in departments})
+        admin_department = next(item for item in departments if item["name"] == "Admin")
+
+        promoted = admin.post(
+            f"{self.base}/api/admin/employees",
+            json={
+                "employee_id": "EMP-ADMIN",
+                "name": "Department Administrator",
+                "email": "department.admin@example.com",
+                "password": "department-password",
+                "department_id": admin_department["id"],
+                "role": "employee",
+            },
+        )
+        self.assertEqual(promoted.status_code, 201, promoted.text)
+        self.assertEqual(promoted.json()["role"], "admin")
+        self.assertEqual(admin.delete(f"{self.base}/api/admin/employees/{promoted.json()['id']}").status_code, 200)
+
+        created_department = admin.post(
+            f"{self.base}/api/admin/departments", json={"name": "Customer Success"}
+        )
+        self.assertEqual(created_department.status_code, 201, created_department.text)
+        department_id = created_department.json()["id"]
+
+        created = admin.post(
+            f"{self.base}/api/admin/employees",
+            json={
+                "employee_id": "EMP-1042",
+                "name": "Asha Rao",
+                "email": "asha.rao@example.com",
+                "password": "correct-horse-42",
+                "department_id": "hr",
+            },
+        )
+        self.assertEqual(created.status_code, 201, created.text)
+        employee = created.json()
+        self.assertEqual(employee["email"], "asha.rao@example.com")
+        self.assertNotIn("password", employee)
+        self.assertNotIn("password_hash", employee)
+        with self.app.db.connect() as connection:
+            stored_hash = connection.execute(
+                "SELECT password_hash FROM employees WHERE id = ?", (employee["id"],)
+            ).fetchone()[0]
+        self.assertTrue(stored_hash.startswith("pbkdf2_sha256$310000$"))
+        self.assertNotIn("correct-horse-42", stored_hash)
+
+        moved = admin.patch(
+            f"{self.base}/api/admin/employees/{employee['id']}",
+            json={
+                "employee_id": "EMP-1042",
+                "name": "Asha Rao",
+                "email": "asha.rao@example.com",
+                "password": "",
+                "department_id": department_id,
+                "status": "suspended",
+            },
+        )
+        self.assertEqual(moved.status_code, 200, moved.text)
+        self.assertEqual((moved.json()["department_id"], moved.json()["status"]), (department_id, "suspended"))
+        filtered = admin.get(
+            f"{self.base}/api/admin/employees", params={"department": department_id, "status": "suspended"}
+        ).json()["employees"]
+        self.assertEqual([item["employee_id"] for item in filtered], ["EMP-1042"])
+
+        conflict = admin.delete(f"{self.base}/api/admin/departments/{department_id}")
+        self.assertEqual(conflict.status_code, 409)
+        self.assertEqual(admin.delete(f"{self.base}/api/admin/employees/{employee['id']}").status_code, 200)
+        self.assertEqual(admin.delete(f"{self.base}/api/admin/departments/{department_id}").status_code, 200)
+        self.assertEqual(admin.delete(f"{self.base}/api/admin/departments/hr").status_code, 200)
+
     def test_upload_index_chat_and_delete(self) -> None:
         admin = self.client()
         client = self.client()
@@ -232,6 +436,38 @@ class DocumentAndChatTests(AppTestCase):
         names = {doc["filename"] for doc in admin.get(f"{self.base}/api/admin/documents").json()["documents"]}
         self.assertEqual(names, {"one.txt", "two.txt"})
         self.assertEqual(len(self.app.store.chunks), 2)
+
+    def test_document_access_assignments_can_be_set_filtered_and_updated(self) -> None:
+        admin = self.client()
+        response = admin.post(
+            f"{self.base}/api/admin/documents",
+            files=[("files", ("payroll.txt", b"Payroll closes on the final business day."))],
+            data={"department": "finance", "employees": json.dumps(["Asha Rao", " Asha Rao ", "Ravi Shah"])},
+        )
+        self.assertEqual(response.status_code, 202, response.text)
+        document = response.json()["results"][0]["document"]
+        self.assertEqual(document["department"], "finance")
+        self.assertEqual(document["allowed_employees"], ["Asha Rao", "Ravi Shah"])
+
+        filtered = admin.get(f"{self.base}/api/admin/documents", params={"department": "finance"}).json()
+        self.assertEqual([item["id"] for item in filtered["documents"]], [document["id"]])
+        self.assertEqual(
+            admin.get(f"{self.base}/api/admin/documents", params={"department": "hr"}).json()["documents"], []
+        )
+
+        updated = admin.patch(
+            f"{self.base}/api/admin/documents/{document['id']}/access",
+            json={"department": "hr", "employees": ["Neha Singh"]},
+        )
+        self.assertEqual(updated.status_code, 200, updated.text)
+        self.assertEqual(updated.json()["department"], "hr")
+        self.assertEqual(updated.json()["allowed_employees"], ["Neha Singh"])
+
+        invalid = admin.patch(
+            f"{self.base}/api/admin/documents/{document['id']}/access",
+            json={"department": "made-up", "employees": []},
+        )
+        self.assertEqual(invalid.status_code, 400)
 
     def test_upload_validation(self) -> None:
         admin = self.client()

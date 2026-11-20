@@ -32,6 +32,10 @@ export async function api(path, { method = "GET", json, body, signal } = {}) {
   } catch {
     data = null;
   }
+  if (response.status === 401 && location.pathname !== "/login") {
+    location.replace("/login");
+    throw new ApiError("Your session expired. Sign in again.", 401, data);
+  }
   if (!response.ok) {
     throw new ApiError((data && data.error) || `Request failed (${response.status}).`, response.status, data);
   }

@@ -66,6 +66,11 @@ class Settings:
     def max_upload_bytes(self) -> int:
         return self.max_upload_mb * 1024 * 1024
 
+    @property
+    def llm_config_path(self) -> Path:
+        """Keep the runtime LLM secret beside this deployment's application database."""
+        return self.db_path.parent / "llm_config.json"
+
     @classmethod
     def from_env(cls, **overrides: object) -> "Settings":
         env = os.getenv("APP_ENV", "development").strip().lower() or "development"

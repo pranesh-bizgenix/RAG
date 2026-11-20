@@ -12,7 +12,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
-from api import admin_routes, chat_routes, page_routes
+from api import admin_routes, auth_routes, chat_routes, page_routes
 from api.http import (
     UNSAFE_METHODS,
     EventStream,
@@ -26,12 +26,15 @@ from api.http import (
 )
 from core.config import Settings
 from core.database import Database
+from core.llm_configuration import load_configuration
 from core.logging_setup import log_fields
 from rag.embedder import APIEmbeddingClient
 from rag.llm import LLMClient, create_llm_client
 from rag.query import RAGChatbot
 from services.conversation_service import ConversationService
 from services.document_service import DocumentError, DocumentService
+from services.employee_service import EmployeeService
+from services.auth_service import AuthService
 from services.workspace import ensure_workspace
 from vectorstore import LocalVectorStore
 
@@ -80,11 +83,13 @@ class Application:
         # across those instances; local runs still receive a random token.
         self.csrf_token = settings.csrf_token or secrets.token_urlsafe(32)
         self.conversations = ConversationService(self.db)
+        self.employees = EmployeeService(self.db)
+        self.auth = AuthService(self.db, self.employees)
         self.documents = DocumentService(self.db, self.store, settings, self.embedding_client)
         self.chatbot = RAGChatbot(
             store=self.store,
             top_k=settings.top_k,
-            llm=create_llm_client() if llm is _DEFAULT else llm,
+            llm=create_llm_client(load_configuration(settings.llm_config_path)) if llm is _DEFAULT else llm,
             embedding_client=self.embedding_client,
             min_vector_score=settings.min_vector_score,
         )
@@ -92,7 +97,7 @@ class Application:
         self.chat_limiter = RateLimiter(settings.chat_messages_per_minute, 60)
         self.started_at = time.time()
         self.router = Router()
-        for module in (chat_routes, admin_routes, page_routes):
+        for module in (auth_routes, chat_routes, admin_routes, page_routes):
             module.register(self.router, self)
 
     # Lifecycle.
@@ -152,6 +157,27 @@ class Application:
             if route.csrf and (not sent or not hmac.compare_digest(sent, self.csrf_token)):
                 raise HTTPError(HTTPStatus.FORBIDDEN, "The page is out of date. Refresh it and try again.")
 
+    def _authorize(self, request: Request) -> Response | None:
+        request.user = self.auth.current(request.header("Cookie"))
+        public = (
+            request.path == "/login"
+            or request.path == "/favicon.ico"
+            or request.path == "/api/health"
+            or request.path.startswith("/static/")
+            or request.path.startswith("/api/auth/")
+        )
+        if public:
+            return None
+        if request.user is None:
+            if request.method == "GET" and request.path in {"/", "/admin"}:
+                return Response(body=b"", status=HTTPStatus.FOUND, headers={"Location": "/login"})
+            raise HTTPError(HTTPStatus.UNAUTHORIZED, "Sign in to continue.")
+        if (request.path == "/admin" or request.path.startswith("/api/admin/")) and request.user["role"] != "admin":
+            if request.method == "GET" and request.path == "/admin":
+                return Response(body=b"", status=HTTPStatus.FOUND, headers={"Location": "/"})
+            raise HTTPError(HTTPStatus.FORBIDDEN, "Administrator access is required.")
+        return None
+
     def dispatch(self, handler: BaseHTTPRequestHandler) -> None:
         started = time.perf_counter()
         path, query = parse_target(handler.path)
@@ -159,6 +185,12 @@ class Application:
         status = 500
         try:
             try:
+                authorization = self._authorize(request)
+                if authorization is not None:
+                    response = authorization
+                    status = response.status
+                    write_response(handler, response)
+                    return
                 route, request.params = self.router.match(request.method, path)
                 self._check_request(route, request)
                 result = route.handler(request)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import os
 import queue
@@ -27,6 +28,7 @@ from vectorstore.stats import document_name
 logger = logging.getLogger(__name__)
 
 STATUSES = ("queued", "processing", "indexed", "failed")
+DEPARTMENTS = ("all", "hr", "finance", "it", "operations", "sales", "marketing", "legal", "executive", "other")
 _EMBED_BATCH = 64
 # How long a deleted document stays restorable (kept in memory, so a restart also ends the window).
 UNDO_SECONDS = 60
@@ -264,15 +266,52 @@ class DocumentService:
 
     # Uploads.
 
-    def upload(self, files: list[tuple[str, bytes]], user_id: int | None) -> list[dict[str, Any]]:
+    def validate_access(self, department: str, employees: list[str] | None) -> tuple[str, list[str]]:
+        department = str(department or "all").strip().lower()
+        if department != "all":
+            with self.db.connect() as connection:
+                if not connection.execute("SELECT 1 FROM departments WHERE id = ?", (department,)).fetchone():
+                    raise DocumentError("Choose a valid department.")
+        if not isinstance(employees, list):
+            raise DocumentError("Employee access must be a list of names.")
+        cleaned: list[str] = []
+        seen: set[str] = set()
+        for value in employees:
+            name = " ".join(str(value).split()).strip()
+            if not name:
+                continue
+            if len(name) > 120:
+                raise DocumentError("Employee names must be 120 characters or fewer.")
+            key = name.casefold()
+            if key not in seen:
+                seen.add(key)
+                cleaned.append(name)
+        if len(cleaned) > 100:
+            raise DocumentError("Assign at most 100 employees to a document.")
+        return department, cleaned
+
+    def upload(
+        self,
+        files: list[tuple[str, bytes]],
+        user_id: int | None,
+        department: str = "all",
+        employees: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
         if not files:
             raise DocumentError("Select at least one file to upload.")
         if len(files) > self.settings.max_files_per_upload:
             raise DocumentError(f"Upload at most {self.settings.max_files_per_upload} files at a time.")
+        department, employees = self.validate_access(department, employees or [])
         results = []
         for raw_name, data in files:
             try:
-                results.append({"filename": raw_name, "ok": True, "document": self._store_upload(raw_name, data, user_id)})
+                results.append(
+                    {
+                        "filename": raw_name,
+                        "ok": True,
+                        "document": self._store_upload(raw_name, data, user_id, department, employees),
+                    }
+                )
             except UploadError as exc:
                 try:
                     display = safe_filename(raw_name)
@@ -281,7 +320,14 @@ class DocumentService:
                 results.append({"filename": display, "ok": False, "error": str(exc)})
         return results
 
-    def _store_upload(self, raw_name: str, data: bytes, user_id: int | None) -> dict[str, Any]:
+    def _store_upload(
+        self,
+        raw_name: str,
+        data: bytes,
+        user_id: int | None,
+        department: str,
+        employees: list[str],
+    ) -> dict[str, Any]:
         filename, extension, content_type = validate_upload(raw_name, data, self.settings.max_upload_bytes)
         digest = hashlib.sha256(data).hexdigest()
         document_id = uuid.uuid4().hex
@@ -304,8 +350,21 @@ class DocumentService:
                 with self.db.connect() as connection:
                     connection.execute(
                         "INSERT INTO documents (id, filename, stored_name, content_type, size_bytes, sha256, status,"
-                        " uploaded_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?)",
-                        (document_id, filename, stored_name, content_type, len(data), digest, user_id, now, now),
+                        " uploaded_by, department, allowed_employees, created_at, updated_at)"
+                        " VALUES (?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?)",
+                        (
+                            document_id,
+                            filename,
+                            stored_name,
+                            content_type,
+                            len(data),
+                            digest,
+                            user_id,
+                            department,
+                            json.dumps(employees),
+                            now,
+                            now,
+                        ),
                     )
             except sqlite3.IntegrityError as exc:
                 (self.documents_dir / stored_name).unlink(missing_ok=True)
@@ -578,20 +637,26 @@ class DocumentService:
 
     _SELECT = (
         "SELECT d.id, d.filename, d.content_type, d.size_bytes, d.sha256, d.status, d.error, d.chunk_count,"
-        " d.embedding_backend, d.created_at, d.updated_at, d.indexed_at, d.stored_name IS NOT NULL AS has_original,"
+        " d.embedding_backend, d.department, d.allowed_employees, d.created_at, d.updated_at, d.indexed_at,"
+        " d.stored_name IS NOT NULL AS has_original,"
         " u.email AS uploaded_by FROM documents d LEFT JOIN users u ON u.id = d.uploaded_by"
     )
 
     @staticmethod
     def _summary(row: sqlite3.Row) -> dict[str, Any]:
-        return {**dict(row), "has_original": bool(row["has_original"])}
+        summary = {**dict(row), "has_original": bool(row["has_original"])}
+        try:
+            summary["allowed_employees"] = json.loads(summary["allowed_employees"] or "[]")
+        except (TypeError, json.JSONDecodeError):
+            summary["allowed_employees"] = []
+        return summary
 
     def get_summary(self, document_id: str) -> dict[str, Any] | None:
         with self.db.connect() as connection:
             row = connection.execute(f"{self._SELECT} WHERE d.id = ?", (document_id,)).fetchone()
         return self._summary(row) if row else None
 
-    def list(self, search: str = "", status: str = "", limit: int = 500) -> list[dict[str, Any]]:
+    def list(self, search: str = "", status: str = "", department: str = "", limit: int = 500) -> list[dict[str, Any]]:
         clauses, params = [], []
         if search.strip():
             clauses.append("d.filename LIKE ? ESCAPE '\\'")
@@ -600,6 +665,9 @@ class DocumentService:
         if status in STATUSES:
             clauses.append("d.status = ?")
             params.append(status)
+        if department:
+            clauses.append("d.department = ?")
+            params.append(department)
         where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
         with self.db.connect() as connection:
             rows = connection.execute(
@@ -607,6 +675,15 @@ class DocumentService:
                 (*params, max(1, min(limit, 500))),
             ).fetchall()
         return [self._summary(row) for row in rows]
+
+    def update_access(self, document_id: str, department: str, employees: list[str] | None) -> dict[str, Any]:
+        department, employees = self.validate_access(department, employees or [])
+        row = self._row(document_id)
+        if row is None:
+            raise DocumentError("Document not found.", 404)
+        self._update(document_id, department=department, allowed_employees=json.dumps(employees))
+        self._event(document_id, row["filename"], "info", "Document access assignment updated.")
+        return self.get_summary(document_id)  # type: ignore[return-value]
 
     def original(self, document_id: str) -> tuple[Path, str, str]:
         """Path, filename and content type of the uploaded file, for viewing or download."""
@@ -692,9 +769,42 @@ class DocumentService:
             "index": self.index_info(),
         }
 
-    def document_names(self, limit: int = 3) -> list[str]:
+    def accessible_document_ids(self, user: dict[str, Any] | None) -> set[str]:
+        """Return indexed documents the signed-in employee may use."""
         with self.db.connect() as connection:
             rows = connection.execute(
-                "SELECT filename FROM documents WHERE status = 'indexed' ORDER BY indexed_at DESC LIMIT ?", (limit,)
+                "SELECT id, department, allowed_employees FROM documents WHERE status = 'indexed'"
+            ).fetchall()
+        if user and user.get("role") == "admin":
+            return {str(row["id"]) for row in rows}
+        if not user:
+            return set()
+        identities = {
+            str(user.get("employee_id", "")).strip().casefold(),
+            str(user.get("email", "")).strip().casefold(),
+            str(user.get("name", "")).strip().casefold(),
+        }
+        allowed: set[str] = set()
+        for row in rows:
+            if row["department"] not in {"all", user.get("department_id")}:
+                continue
+            try:
+                named = {str(value).strip().casefold() for value in json.loads(row["allowed_employees"] or "[]")}
+            except (TypeError, json.JSONDecodeError):
+                named = set()
+            if not named or identities & named:
+                allowed.add(str(row["id"]))
+        return allowed
+
+    def document_names(self, limit: int = 3, user: dict[str, Any] | None = None) -> list[str]:
+        allowed = self.accessible_document_ids(user)
+        if not allowed:
+            return []
+        placeholders = ", ".join("?" for _ in allowed)
+        with self.db.connect() as connection:
+            rows = connection.execute(
+                f"SELECT filename FROM documents WHERE status = 'indexed' AND id IN ({placeholders})"
+                " ORDER BY indexed_at DESC LIMIT ?",
+                (*allowed, limit),
             ).fetchall()
         return [row["filename"] for row in rows]

@@ -11,3 +11,5 @@ storage/documents/
 storage/*.tmp
 storage/llm_config.json
 backups/
+.vercel
+.env.local

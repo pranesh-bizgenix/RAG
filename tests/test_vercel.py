@@ -23,10 +23,13 @@ class VercelAdapterTests(unittest.TestCase):
     def test_static_frontend_is_not_rewritten_through_python(self) -> None:
         root = Path(__file__).resolve().parent.parent
         config = json.loads((root / "vercel.json").read_text(encoding="utf-8"))
-        sources = [item["source"] for item in config["rewrites"]]
+        rewrites = {item["source"]: item["destination"] for item in config["rewrites"]}
+        sources = list(rewrites)
         self.assertIn("/api/:path*", sources)
         self.assertNotIn("/(.*)", sources)
+        self.assertEqual(rewrites["/login"], "/login.html")
         self.assertTrue((root / "public" / "index.html").is_file())
+        self.assertTrue((root / "public" / "login.html").is_file())
         self.assertTrue((root / "public" / "static" / "js" / "chat.js").is_file())
 
 

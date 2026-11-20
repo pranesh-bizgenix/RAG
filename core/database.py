@@ -194,15 +194,27 @@ class Database:
     @property
     def schema_version(self) -> int:
         with self.connect() as connection:
+            if self.turso_url:
+                row = connection.execute("SELECT MAX(version) FROM _schema_migrations").fetchone()
+                return int(row[0] or 0)
             return int(connection.execute("PRAGMA user_version").fetchone()[0])
 
     def migrate(self) -> None:
         with self.connect() as connection:
-            if not self.turso_url:
+            if self.turso_url:
+                connection.execute("CREATE TABLE IF NOT EXISTS _schema_migrations (version INTEGER NOT NULL)")
+                row = connection.execute("SELECT MAX(version) FROM _schema_migrations").fetchone()
+                version = int(row[0] or 0)
+            else:
                 connection.execute("PRAGMA journal_mode = WAL")
-            version = int(connection.execute("PRAGMA user_version").fetchone()[0])
+                version = int(connection.execute("PRAGMA user_version").fetchone()[0])
             for number, script in enumerate(MIGRATIONS[version:], start=version + 1):
-                connection.executescript(f"BEGIN;\n{script}\nPRAGMA user_version = {number};\nCOMMIT;")
+                version_sql = (
+                    f"INSERT INTO _schema_migrations (version) VALUES ({number});"
+                    if self.turso_url
+                    else f"PRAGMA user_version = {number};"
+                )
+                connection.executescript(f"BEGIN;\n{script}\n{version_sql}\nCOMMIT;")
 
     def ping(self) -> bool:
         try:

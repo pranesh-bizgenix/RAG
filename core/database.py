@@ -151,6 +151,19 @@ MIGRATIONS: list[str] = [
     CREATE INDEX idx_auth_sessions_employee ON auth_sessions(employee);
     CREATE INDEX idx_auth_sessions_expiry ON auth_sessions(expires_at);
     """,
+    """
+    CREATE TABLE llm_configuration (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+        service TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        model TEXT NOT NULL,
+        api_key TEXT NOT NULL,
+        base_url TEXT NOT NULL,
+        source TEXT NOT NULL DEFAULT 'admin' CHECK (source IN ('admin', 'environment', 'legacy')),
+        updated_at TEXT NOT NULL
+    );
+    """,
 ]
 
 

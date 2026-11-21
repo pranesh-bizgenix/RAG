@@ -26,7 +26,7 @@ from api.http import (
 )
 from core.config import Settings
 from core.database import Database
-from core.llm_configuration import load_configuration
+from core.llm_configuration import configuration_from_environment, load_configuration
 from core.logging_setup import log_fields
 from rag.embedder import APIEmbeddingClient
 from rag.llm import LLMClient, create_llm_client
@@ -34,6 +34,7 @@ from rag.query import RAGChatbot
 from services.conversation_service import ConversationService
 from services.document_service import DocumentError, DocumentService
 from services.employee_service import EmployeeService
+from services.llm_configuration_service import LLMConfigurationService
 from services.auth_service import AuthService
 from services.workspace import ensure_workspace
 from vectorstore import LocalVectorStore
@@ -77,6 +78,8 @@ class Application:
             turso_url=settings.turso_database_url,
             turso_auth_token=settings.turso_auth_token,
         )
+        self.llm_configuration = LLMConfigurationService(self.db)
+        self._manage_llm_configuration = llm is _DEFAULT
         self.store = LocalVectorStore(settings.store_path)
         self.embedding_client = embedding_client or APIEmbeddingClient()
         # No accounts: everyone shares one workspace. The CSRF token stops other websites from
@@ -90,10 +93,11 @@ class Application:
         self.employees = EmployeeService(self.db)
         self.auth = AuthService(self.db, self.employees)
         self.documents = DocumentService(self.db, self.store, settings, self.embedding_client)
+        initial_llm = self._load_configured_llm() if llm is _DEFAULT else llm
         self.chatbot = RAGChatbot(
             store=self.store,
             top_k=settings.top_k,
-            llm=create_llm_client(load_configuration(settings.llm_config_path)) if llm is _DEFAULT else llm,
+            llm=initial_llm,
             embedding_client=self.embedding_client,
             min_vector_score=settings.min_vector_score,
         )
@@ -103,6 +107,35 @@ class Application:
         self.router = Router()
         for module in (auth_routes, chat_routes, admin_routes, page_routes):
             module.register(self.router, self)
+
+    def _load_configured_llm(self) -> LLMClient | None:
+        """Load the durable setting, migrating a legacy file when present."""
+        saved = self.llm_configuration.load()
+        if saved is None:
+            legacy = load_configuration(self.settings.llm_config_path)
+            if legacy:
+                saved = self.llm_configuration.save(legacy, enabled=True, source="legacy")
+        if saved is not None:
+            if not saved["enabled"]:
+                return None
+            configuration = {
+                key: str(saved[key])
+                for key in ("service", "provider", "model", "api_key", "base_url")
+            }
+            return create_llm_client(configuration)
+        environment = configuration_from_environment()
+        return create_llm_client(environment) if environment else None
+
+    def reload_llm_configuration(self) -> None:
+        """Refresh the client from shared storage for serverless instances."""
+        if self._manage_llm_configuration:
+            self.chatbot.llm = self._load_configured_llm()
+            self.chatbot.last_llm_error = None
+
+    def manage_llm_configuration(self) -> None:
+        """Make subsequent requests follow the durable administrator setting."""
+        self._manage_llm_configuration = True
+        self.reload_llm_configuration()
 
     # Lifecycle.
 

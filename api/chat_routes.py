@@ -112,6 +112,9 @@ def register(router: Router, app: "Application") -> None:
     def generate(request: Request, conversation_id: str, query: str, user_message_id: int, title: str) -> None:
         """Stream an answer; the caller must hold a generation slot, which is released here."""
         try:
+            # Vercel requests can land on different warm instances. Refreshing
+            # here makes a durable admin ON/OFF change effective everywhere.
+            app.reload_llm_configuration()
             stream = app.event_stream(request)
             history = app.conversations.history(conversation_id, user_message_id)
             parts: list[str] = []

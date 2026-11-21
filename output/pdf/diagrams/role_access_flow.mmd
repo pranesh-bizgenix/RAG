@@ -1,0 +1,9 @@
+flowchart TD
+  L[Sign in] --> I{Account active?}
+  I -- No --> D[Deny access]
+  I -- Yes --> R{Role}
+  R -- Employee --> C[Chat workspace]
+  R -- Administrator --> C
+  R -- Administrator --> A[Admin workspace]
+  C --> P[Filter retrieval by document access assignments]
+  P --> N[Current deployment: all documents assigned to all]

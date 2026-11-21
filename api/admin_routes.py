@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import json
 import shutil
 import time
@@ -14,10 +13,10 @@ from typing import TYPE_CHECKING
 from urllib.parse import quote
 
 from api.http import HTTPError, Request, Response, Router
+from core.database import DatabaseError
 from core.llm_configuration import (
-    load_configuration,
+    configuration_from_environment,
     public_catalog,
-    save_configuration,
     validate_configuration,
 )
 from rag.llm import create_llm_client
@@ -282,6 +281,7 @@ def register(router: Router, app: "Application") -> None:
 
     @router.add("GET", "/api/admin/knowledge-base")
     def knowledge_base(request: Request) -> dict:
+        app.reload_llm_configuration()
         llm = app.chatbot.llm
         return {
             "index": app.documents.index_info(),
@@ -293,21 +293,26 @@ def register(router: Router, app: "Application") -> None:
 
     @router.add("GET", "/api/admin/llm")
     def llm_configuration(request: Request) -> dict:
-        saved = load_configuration(settings.llm_config_path)
+        app.reload_llm_configuration()
+        return llm_configuration_payload()
+
+    def llm_configuration_payload() -> dict:
+        saved = app.llm_configuration.load()
         llm = app.chatbot.llm
         service = (saved or {}).get("service") or getattr(llm, "service", "")
+        model = (saved or {}).get("model") or getattr(llm, "model", "")
         base_url = (saved or {}).get("base_url", "")
-        if not saved and llm:
-            base_url = os.getenv("LLM_BASE_URL", "").strip()
+        enabled = bool(saved["enabled"]) if saved else llm is not None
         return {
             "catalog": public_catalog(),
             "configuration": {
-                "enabled": llm is not None,
+                "enabled": enabled,
+                "configured": bool(saved or llm),
                 "service": service,
-                "model": getattr(llm, "model", ""),
+                "model": model,
                 "base_url": base_url,
                 "has_api_key": bool(saved and saved.get("api_key")) or bool(getattr(llm, "api_key", "")),
-                "source": "admin" if saved else "environment" if llm else "none",
+                "source": str(saved.get("source", "admin")) if saved else "environment" if llm else "none",
             },
         }
 
@@ -316,30 +321,43 @@ def register(router: Router, app: "Application") -> None:
         try:
             payload = request.json()
             if not str(payload.get("api_key", "")).strip():
-                saved = load_configuration(settings.llm_config_path) or {}
+                saved = app.llm_configuration.load() or {}
                 current_service = saved.get("service") or getattr(app.chatbot.llm, "service", "")
                 if current_service == str(payload.get("service", "")).strip().lower():
                     payload["api_key"] = saved.get("api_key") or getattr(app.chatbot.llm, "api_key", "")
             configuration = validate_configuration(payload)
-            client = create_llm_client(configuration) if configuration else None
-            save_configuration(settings.llm_config_path, configuration)
+            if configuration is None:
+                raise ValueError("Choose a supported LLM provider.")
+            create_llm_client(configuration)  # Validate that a client can be constructed before saving.
+            app.llm_configuration.save(configuration, enabled=True, source="admin")
+            app.manage_llm_configuration()
         except ValueError as exc:
             raise HTTPError(HTTPStatus.BAD_REQUEST, str(exc)) from exc
-        except OSError as exc:
+        except DatabaseError as exc:
             raise HTTPError(HTTPStatus.INTERNAL_SERVER_ERROR, "The LLM settings could not be saved.") from exc
-        app.chatbot.llm = client
-        app.chatbot.last_llm_error = None
-        return {
-            "ok": True,
-            "configuration": {
-                "enabled": client is not None,
-                "service": configuration.get("service", "") if configuration else "",
-                "model": getattr(client, "model", ""),
-                "base_url": configuration.get("base_url", "") if configuration else "",
-                "has_api_key": bool(configuration and configuration.get("api_key")),
-                "source": "admin" if configuration else "none",
-            },
-        }
+        return {"ok": True, **llm_configuration_payload()}
+
+    @router.add("PUT", "/api/admin/llm/enabled")
+    def set_llm_enabled(request: Request) -> dict:
+        payload = request.json()
+        enabled = payload.get("enabled")
+        if not isinstance(enabled, bool):
+            raise HTTPError(HTTPStatus.BAD_REQUEST, "The enabled value must be true or false.")
+        try:
+            saved = app.llm_configuration.load()
+            if saved is None:
+                environment = configuration_from_environment()
+                if environment is None:
+                    raise ValueError("Save a provider, model, and API key before turning the language model on.")
+                app.llm_configuration.save(environment, enabled=enabled, source="environment")
+            else:
+                app.llm_configuration.set_enabled(enabled)
+            app.manage_llm_configuration()
+        except ValueError as exc:
+            raise HTTPError(HTTPStatus.BAD_REQUEST, str(exc)) from exc
+        except DatabaseError as exc:
+            raise HTTPError(HTTPStatus.INTERNAL_SERVER_ERROR, "The language model state could not be changed.") from exc
+        return {"ok": True, **llm_configuration_payload()}
 
     @router.add("GET", "/api/admin/events")
     def events(request: Request) -> dict:

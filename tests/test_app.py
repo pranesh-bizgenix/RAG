@@ -212,7 +212,9 @@ class AccessTests(AppTestCase):
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(self.app.chatbot.llm.model, "openai/gpt-oss-120b")
         self.assertEqual(getattr(self.app.chatbot.llm, "service"), "groq")
-        self.assertIn("super-secret-key", self.settings.llm_config_path.read_text(encoding="utf-8"))
+        saved = self.app.llm_configuration.load()
+        self.assertEqual(saved["api_key"], "super-secret-key")
+        self.assertTrue(saved["enabled"])
 
         configuration = session.get(f"{self.base}/api/admin/llm")
         self.assertEqual(configuration.status_code, 200)
@@ -233,6 +235,37 @@ class AccessTests(AppTestCase):
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(self.app.chatbot.llm.model, "gemini-3.5-flash-lite")
         self.assertEqual(self.app.chatbot.llm.api_key, "saved-key")
+
+    def test_admin_can_turn_the_saved_llm_off_and_on_without_losing_the_key(self) -> None:
+        session = self.client()
+        saved = session.put(
+            f"{self.base}/api/admin/llm",
+            json={
+                "service": "anthropic",
+                "model": "claude-sonnet-5",
+                "api_key": "saved-claude-key",
+                "base_url": "https://api.anthropic.com/v1",
+            },
+        )
+        self.assertEqual(saved.status_code, 200, saved.text)
+
+        disabled = session.put(f"{self.base}/api/admin/llm/enabled", json={"enabled": False})
+        self.assertEqual(disabled.status_code, 200, disabled.text)
+        self.assertFalse(disabled.json()["configuration"]["enabled"])
+        self.assertTrue(disabled.json()["configuration"]["has_api_key"])
+        self.assertIsNone(self.app.chatbot.llm)
+        self.assertEqual(self.app.llm_configuration.load()["api_key"], "saved-claude-key")
+        disabled_instance = Application(self.settings, embedding_client=APIEmbeddingClient())
+        self.assertIsNone(disabled_instance.chatbot.llm)
+
+        enabled = session.put(f"{self.base}/api/admin/llm/enabled", json={"enabled": True})
+        self.assertEqual(enabled.status_code, 200, enabled.text)
+        self.assertTrue(enabled.json()["configuration"]["enabled"])
+        self.assertEqual(self.app.chatbot.llm.model, "claude-sonnet-5")
+        self.assertEqual(self.app.chatbot.llm.api_key, "saved-claude-key")
+        enabled_instance = Application(self.settings, embedding_client=APIEmbeddingClient())
+        self.assertEqual(enabled_instance.chatbot.llm.model, "claude-sonnet-5")
+        self.assertEqual(enabled_instance.chatbot.llm.api_key, "saved-claude-key")
 
         admin = self.client().get(f"{self.base}/api/admin/bootstrap")
         self.assertEqual(admin.status_code, 200)

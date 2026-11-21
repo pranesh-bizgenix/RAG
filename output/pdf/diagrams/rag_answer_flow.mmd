@@ -1,0 +1,11 @@
+flowchart TD
+  Q[User question] --> S[Validate and save message]
+  S --> P[Resolve accessible document IDs]
+  P --> R[Retrieve ranked chunks]
+  R --> C[Attach source metadata]
+  C --> M{LLM configured?}
+  M -- Yes --> G[Generate grounded answer]
+  M -- No --> F[Return retrieval-only passages]
+  G --> O[Stream answer and sources]
+  F --> O
+  O --> H[Save response in conversation history]

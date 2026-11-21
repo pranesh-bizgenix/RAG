@@ -1,4 +1,4 @@
-"""Persist administrator-selected language-model settings outside the database."""
+"""Validate language-model settings and read legacy file-based configuration."""
 
 from __future__ import annotations
 
@@ -96,6 +96,29 @@ def public_catalog() -> list[dict[str, Any]]:
         }
         for item in SERVICES
     ]
+
+
+def configuration_from_environment() -> dict[str, str] | None:
+    """Return a validated configuration from the deployment environment."""
+    provider = os.getenv("LLM_PROVIDER", "none").strip().lower()
+    if provider in {"", "none", "disabled"}:
+        return None
+    model = os.getenv("LLM_MODEL", "").strip()
+    api_key = os.getenv("LLM_API_KEY", "").strip()
+    base_url = os.getenv("LLM_BASE_URL", "").strip()
+    service_id = provider if provider in SERVICE_BY_ID else ""
+    if provider == "openai-compatible" and not base_url:
+        service_id = "openai"
+    if not service_id:
+        for service in SERVICES:
+            if service["provider"] == provider and base_url.rstrip("/") == str(service["base_url"]).rstrip("/"):
+                service_id = str(service["id"])
+                break
+    if not service_id:
+        service_id = "custom" if provider == "openai-compatible" else provider
+    return validate_configuration(
+        {"service": service_id, "model": model, "api_key": api_key, "base_url": base_url}
+    )
 
 
 def load_configuration(path: Path) -> dict[str, str] | None:

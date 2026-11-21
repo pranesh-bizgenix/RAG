@@ -1,0 +1,11 @@
+Feature,Status,Primary roles,Evidence
+Secure sign in and session access,Verified,All active users; administrators receive the admin workspace.,The user reaches the permitted workspace and the server associates requests with an employee record.
+Role and department context,Partially verified,Employee and administrator.,"Employees use chat; administrators can also manage documents, people, configuration, and service health."
+Knowledge Copilot chat,Verified,Employees and administrators.,"A conversation is created, titled from the first question, and saved to history."
+Grounded retrieval and citations,Verified,"All authenticated users, limited by accessible documents when access assignments are configured.",Users can inspect the page-level evidence behind a response.
+Conversation lifecycle,Verified,All authenticated users.,The sidebar reflects current conversation history.
+Document ingestion and access assignment,Verified from deployed API and source,Administrator only.,Successfully indexed documents become available to retrieval according to access metadata.
+Document management and preview,Verified from deployed API and source,Administrator only.,The document record and its index state remain synchronized.
+Employee and department administration,Verified from deployed API and source,Administrator only.,The employee can authenticate when active and receives the assigned context.
+Knowledge base operations and health,Verified,Administrator only.,Administrators can distinguish a content issue from a service or configuration issue.
+Language model configuration,Verified; currently disabled,Administrator only.,New questions use the configured provider or fall back to retrieved passages when disabled.

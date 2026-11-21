@@ -1,0 +1,15 @@
+flowchart LR
+  U[Authenticated employee] --> B[Browser workspace]
+  A[Administrator] --> B
+  B --> V[Vercel Python application]
+  V --> AUTH[Session and role checks]
+  V --> CHAT[Conversation service]
+  V --> DOC[Document service]
+  AUTH --> DB[(Turso database)]
+  CHAT --> RET[Retriever]
+  DOC --> PARSE[Parsers and chunking]
+  PARSE --> IDX[(Vector index)]
+  RET --> IDX
+  RET --> LLM[Optional LLM provider]
+  LLM --> B
+  RET --> B

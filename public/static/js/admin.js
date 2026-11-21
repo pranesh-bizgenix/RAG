@@ -1070,13 +1070,18 @@ function renderLlmConfiguration(data) {
   $("llm-api-key").required = !config.has_api_key;
   $("llm-api-key").placeholder = config.has_api_key ? "•••••••• (leave blank to keep current key)" : "Paste API key";
   $("llm-key-hint").textContent = config.has_api_key
-    ? "An API key is saved. Leave this blank to keep it, or paste a replacement."
-    : "The key is stored on this server and is never sent back to the browser.";
+    ? "An API key is stored in the shared database. Leave this blank to keep it, or paste a replacement."
+    : "The key is stored in the shared database and is never sent back to the browser.";
   $("llm-status").className = `pill ${config.enabled ? "pill-success" : "pill-warning"}`;
-  $("llm-status").textContent = config.enabled ? "Active" : "Not configured";
+  $("llm-status").textContent = config.enabled ? "Active" : config.configured ? "OFF" : "Not configured";
+  $("toggle-llm").disabled = !config.configured;
+  $("toggle-llm").textContent = config.enabled ? "Turn OFF" : "Turn ON";
+  $("toggle-llm").className = config.enabled ? "btn btn-danger" : "btn";
   $("llm-active-model").textContent = config.enabled
     ? `Currently using ${config.model}${config.source === "environment" ? " (from environment)" : ""}`
-    : "Chat is currently using retrieval-only answers.";
+    : config.configured
+      ? `${config.model} is saved but disabled. Chat is using retrieval-only answers.`
+      : "Chat is currently using retrieval-only answers.";
 }
 
 $("llm-service").addEventListener("change", () => {
@@ -1089,6 +1094,24 @@ $("llm-service").addEventListener("change", () => {
 });
 
 $("llm-model").addEventListener("change", updateCustomModelVisibility);
+
+$("toggle-llm").addEventListener("click", async () => {
+  const button = $("toggle-llm");
+  const enabled = !state.llm.configuration.enabled;
+  button.disabled = true;
+  button.classList.add("busy");
+  try {
+    const result = await api("/api/admin/llm/enabled", { method: "PUT", json: { enabled } });
+    renderLlmConfiguration(result);
+    toast(enabled ? "Language model access is ON." : "Language model access is OFF.");
+    await loadSettings();
+  } catch (error) {
+    toast(error.message, "error");
+  } finally {
+    button.classList.remove("busy");
+    button.disabled = !state.llm?.configuration?.configured;
+  }
+});
 
 $("llm-form").addEventListener("submit", async (event) => {
   event.preventDefault();

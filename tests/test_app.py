@@ -157,6 +157,8 @@ class AccessTests(AppTestCase):
         self.assertEqual(admin.get(f"{self.base}/").status_code, 200)
         self.assertIn('data-user-role="admin"', admin.get(f"{self.base}/").text)
         self.assertEqual(admin.get(f"{self.base}/admin").status_code, 200)
+        admin_login = admin.get(f"{self.base}/login", allow_redirects=False)
+        self.assertEqual((admin_login.status_code, admin_login.headers["Location"]), (302, "/admin"))
         self.assertEqual(admin.get(f"{self.base}/api/admin/overview").status_code, 200)
         current_id = admin.get(f"{self.base}/api/admin/bootstrap").json()["user"]["id"]
         self.assertEqual(admin.delete(f"{self.base}/api/admin/employees/{current_id}").status_code, 409)
@@ -197,6 +199,12 @@ class AccessTests(AppTestCase):
         self.assertEqual(employee.get(f"{self.base}/api/admin/overview").status_code, 403)
         bootstrap = employee.get(f"{self.base}/api/bootstrap").json()
         self.assertEqual(bootstrap["user"]["role"], "employee")
+
+    def test_logout_invalidates_admin_session_before_protected_page_access(self) -> None:
+        admin = self.client()
+        self.assertEqual(admin.post(f"{self.base}/api/auth/logout").status_code, 200)
+        protected = admin.get(f"{self.base}/admin", allow_redirects=False)
+        self.assertEqual((protected.status_code, protected.headers["Location"]), (302, "/login"))
 
     def test_admin_can_save_and_activate_an_llm_without_exposing_its_key(self) -> None:
         session = self.client()

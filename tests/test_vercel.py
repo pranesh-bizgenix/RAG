@@ -34,6 +34,7 @@ class VercelAdapterTests(unittest.TestCase):
         self.assertEqual(redirects["/index.html"], "/")
         self.assertEqual(redirects["/admin.html"], "/admin")
         self.assertEqual(redirects["/login.html"], "/login")
+        self.assertEqual(config["functions"]["api/index.py"]["includeFiles"], "public/**")
         self.assertNotIn("public/**", config["functions"]["api/index.py"]["excludeFiles"])
         self.assertTrue((root / "public" / "index.html").is_file())
         self.assertTrue((root / "public" / "login.html").is_file())
